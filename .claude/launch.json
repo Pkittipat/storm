@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "/Users/oll/.npm-global/bin/pnpm",
+      "runtimeArgs": ["--filter", "web", "dev", "--port", "5175", "--strictPort"],
+      "port": 5175
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "/Users/oll/.npm-global/bin/pnpm",
+      "runtimeArgs": ["--filter", "api", "start:dev"],
+      "port": 3000
+    }
+  ]
+}
