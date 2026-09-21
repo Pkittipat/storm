@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { Block, Connection } from '../api'
 import { BlockCard, ZoomControl } from '../components'
 import { BLOCK_HEIGHT, BLOCK_WIDTH, PORT_Y, connectorPath, snap, type Point } from './geometry'
@@ -32,11 +32,14 @@ type Gesture =
   | { type: 'drag'; id: string; start: Point; origin: Point; moved: boolean }
   | { type: 'connect'; sourceId: string }
 
+/** How long the viewport must stay still before it's reported to the parent. */
+const SETTLE_MS = 150
+
 /**
  * The process canvas: a pannable, zoomable world of blocks and
  * connectors. Owns only transient gesture state (a block mid-drag, a
- * connector mid-draw); every committed change goes out through the
- * callbacks.
+ * connector mid-draw, the live viewport while panning/zooming); every
+ * committed change goes out through the callbacks.
  */
 export function Canvas({
   blocks,
@@ -54,40 +57,73 @@ export function Canvas({
   const [dragPos, setDragPos] = useState<{ id: string } & Point | null>(null)
   const [pending, setPending] = useState<{ sourceId: string; to: Point } | null>(null)
 
+  // The live viewport. Panning and wheel-scrolling update it every frame but only re-render
+  // the canvas; the parent hears about it once the view settles (reporting every frame would
+  // re-render the whole app per pointer move, which is what made panning stutter).
+  const [view, setLive] = useState(viewport)
+  const [synced, setSynced] = useState(viewport)
+  const [reported, setReported] = useState(viewport)
+  if (viewport !== synced) {
+    setSynced(viewport)
+    // Adopt changes from outside (switching process); ignore our own report coming back.
+    if (viewport !== reported) setLive(viewport)
+  }
+  const settle = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const report = (v: Viewport) => {
+    clearTimeout(settle.current)
+    setReported(v)
+    onViewportChange(v)
+  }
+  const setView = (v: Viewport, when: 'settled' | 'now' = 'settled') => {
+    setLive(v)
+    clearTimeout(settle.current)
+    if (when === 'now') report(v)
+    else settle.current = setTimeout(() => report(v), SETTLE_MS)
+  }
+  useEffect(() => () => clearTimeout(settle.current), [])
+  // Event listeners registered once read the current view and setter through refs.
+  const live = useRef({ view, setView })
+  useLayoutEffect(() => {
+    live.current = { view, setView }
+  })
+
   const toWorld = (clientX: number, clientY: number): Point => {
     const rect = ref.current!.getBoundingClientRect()
-    return { x: (clientX - rect.left - viewport.x) / viewport.zoom, y: (clientY - rect.top - viewport.y) / viewport.zoom }
+    return { x: (clientX - rect.left - view.x) / view.zoom, y: (clientY - rect.top - view.y) / view.zoom }
   }
 
   const blockAt = (p: Point) =>
     [...blocks].reverse().find((b) => p.x >= b.x && p.x <= b.x + BLOCK_WIDTH && p.y >= b.y && p.y <= b.y + BLOCK_HEIGHT)
 
-  const zoomAround = (next: number, cx: number, cy: number) => {
+  const zoomAround = (from: Viewport, next: number, cx: number, cy: number): Viewport => {
     const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next))
-    const k = zoom / viewport.zoom
-    onViewportChange({ zoom, x: cx - (cx - viewport.x) * k, y: cy - (cy - viewport.y) * k })
+    const k = zoom / from.zoom
+    return { zoom, x: cx - (cx - from.x) * k, y: cy - (cy - from.y) * k }
   }
 
   const zoomStep = (dir: 1 | -1) => {
     const rect = ref.current!.getBoundingClientRect()
-    zoomAround(Math.round((viewport.zoom + dir * 0.1) * 10) / 10, rect.width / 2, rect.height / 2)
+    setView(zoomAround(view, Math.round((view.zoom + dir * 0.1) * 10) / 10, rect.width / 2, rect.height / 2), 'now')
   }
 
-  // Wheel needs a non-passive listener to preventDefault the browser's page zoom/scroll.
+  // Wheel needs a non-passive listener to preventDefault the browser's page zoom/scroll. Registered
+  // once; several wheel events can land in one frame, so each builds on the latest view, not the render's.
   useEffect(() => {
     const el = ref.current!
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+      const { view: v, setView: set } = live.current
       const rect = el.getBoundingClientRect()
-      if (e.ctrlKey || e.metaKey) {
-        zoomAround(viewport.zoom * Math.exp(-e.deltaY * 0.01), e.clientX - rect.left, e.clientY - rect.top)
-      } else {
-        onViewportChange({ ...viewport, x: viewport.x - e.deltaX, y: viewport.y - e.deltaY })
-      }
+      const next =
+        e.ctrlKey || e.metaKey
+          ? zoomAround(v, v.zoom * Math.exp(-e.deltaY * 0.01), e.clientX - rect.left, e.clientY - rect.top)
+          : { ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }
+      live.current.view = next
+      set(next)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  })
+  }, [])
 
   // Pan just enough to bring a newly selected block into view (e.g. one just added, or picked from the inspector's Flow list).
   const revealed = useRef<string | null>(null)
@@ -99,14 +135,15 @@ export function Canvas({
     if (!b || !ref.current) return
     const { width, height } = ref.current.getBoundingClientRect()
     const pad = 48
-    const left = b.x * viewport.zoom + viewport.x
-    const top = b.y * viewport.zoom + viewport.y
-    const right = left + BLOCK_WIDTH * viewport.zoom
-    const bottom = top + BLOCK_HEIGHT * viewport.zoom
+    const { view: v, setView: set } = live.current
+    const left = b.x * v.zoom + v.x
+    const top = b.y * v.zoom + v.y
+    const right = left + BLOCK_WIDTH * v.zoom
+    const bottom = top + BLOCK_HEIGHT * v.zoom
     const dx = right > width - pad ? width - pad - right : left < pad ? pad - left : 0
     const dy = bottom > height - pad ? height - pad - bottom : top < pad ? pad - top : 0
-    if (dx || dy) onViewportChange({ ...viewport, x: viewport.x + dx, y: viewport.y + dy })
-  }, [selection, blocks, viewport, onViewportChange])
+    if (dx || dy) set({ ...v, x: v.x + dx, y: v.y + dy }, 'now')
+  }, [selection, blocks])
 
   const onPointerMove = (e: ReactPointerEvent) => {
     const g = gesture.current
@@ -115,12 +152,13 @@ export function Canvas({
       const dx = e.clientX - g.start.x
       const dy = e.clientY - g.start.y
       if (Math.abs(dx) + Math.abs(dy) > 3) g.moved = true
-      onViewportChange({ ...g.origin, x: g.origin.x + dx, y: g.origin.y + dy })
+      setView({ ...g.origin, x: g.origin.x + dx, y: g.origin.y + dy })
     } else if (g.type === 'drag') {
-      const dx = (e.clientX - g.start.x) / viewport.zoom
-      const dy = (e.clientY - g.start.y) / viewport.zoom
+      const dx = (e.clientX - g.start.x) / view.zoom
+      const dy = (e.clientY - g.start.y) / view.zoom
       if (Math.abs(dx) + Math.abs(dy) > 3) g.moved = true
-      if (g.moved) setDragPos({ id: g.id, x: snap(g.origin.x + dx), y: snap(g.origin.y + dy) })
+      // Follow the pointer exactly; snapping to the grid happens on drop.
+      if (g.moved) setDragPos({ id: g.id, x: g.origin.x + dx, y: g.origin.y + dy })
     } else {
       setPending({ sourceId: g.sourceId, to: toWorld(e.clientX, e.clientY) })
     }
@@ -130,11 +168,14 @@ export function Canvas({
     const g = gesture.current
     gesture.current = null
     if (!g) return
-    if (g.type === 'pan' && !g.moved) onSelect(null)
+    if (g.type === 'pan') {
+      if (g.moved) setView(view, 'now')
+      else onSelect(null)
+    }
     if (g.type === 'drag') {
-      if (g.moved && dragPos && (dragPos.x !== g.origin.x || dragPos.y !== g.origin.y)) {
-        onMoveBlock(g.id, dragPos.x, dragPos.y)
-      }
+      const x = dragPos && snap(dragPos.x)
+      const y = dragPos && snap(dragPos.y)
+      if (g.moved && x !== null && y !== null && (x !== g.origin.x || y !== g.origin.y)) onMoveBlock(g.id, x, y)
       setDragPos(null)
     }
     if (g.type === 'connect') {
@@ -158,21 +199,21 @@ export function Canvas({
       className={`relative flex-grow touch-none overflow-hidden bg-surface select-none ${pending ? 'cursor-crosshair' : ''}`}
       style={{
         backgroundImage: 'radial-gradient(var(--color-canvas-dot) 1px, transparent 1px)',
-        backgroundSize: `${20 * viewport.zoom}px ${20 * viewport.zoom}px`,
-        backgroundPosition: `${viewport.x}px ${viewport.y}px`,
+        backgroundSize: `${20 * view.zoom}px ${20 * view.zoom}px`,
+        backgroundPosition: `${view.x}px ${view.y}px`,
       }}
       onPointerDown={(e) => {
         if (e.button !== 0 || e.target !== e.currentTarget) return
         capture(e)
-        gesture.current = { type: 'pan', start: { x: e.clientX, y: e.clientY }, origin: viewport, moved: false }
+        gesture.current = { type: 'pan', start: { x: e.clientX, y: e.clientY }, origin: view, moved: false }
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
       <div
-        className="pointer-events-none absolute top-0 left-0 origin-top-left"
-        style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }}
+        className="pointer-events-none absolute top-0 left-0 origin-top-left will-change-transform"
+        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}
       >
         <svg className="absolute top-0 left-0 overflow-visible" width="1" height="1" aria-label="Connections">
           {connections.map((c) => {
@@ -237,7 +278,7 @@ export function Canvas({
       </div>
 
       <div className="absolute top-step-2xl left-step-2xl">
-        <ZoomControl percent={Math.round(viewport.zoom * 100)} onZoomIn={() => zoomStep(1)} onZoomOut={() => zoomStep(-1)} />
+        <ZoomControl percent={Math.round(view.zoom * 100)} onZoomIn={() => zoomStep(1)} onZoomOut={() => zoomStep(-1)} />
       </div>
 
       {children}
