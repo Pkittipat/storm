@@ -1,139 +1,335 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { api, type Block, type BlockPatch, type Process, type ProcessSummary } from './api'
+import { Canvas, type Selection, type Viewport } from './canvas/Canvas'
+import { BLOCK_HEIGHT, BLOCK_WIDTH } from './canvas/geometry'
+import { Inspector } from './canvas/Inspector'
+import { generateProcess, goIdent } from './codegen'
 import {
-  BlockCard,
   Button,
   Composer,
-  FieldRow,
+  EditableText,
   Header,
   NavGroupLabel,
   NavItem,
-  Panel,
-  PanelSection,
   Sidebar,
-  Tabs,
-  ZoomControl,
+  blockKindLabel,
   type BlockKind,
 } from './components'
 
-interface CanvasBlock {
-  kind: BlockKind
-  title: string
-  left: number
-  actor?: boolean
-  hotspots?: number
-}
+const INITIAL_VIEWPORT: Viewport = { x: 40, y: 80, zoom: 1 }
+const STEP_X = 180
+const STEP_Y = 160
 
-const canvasBlocks: CanvasBlock[] = [
-  { kind: 'readmodel', title: 'Cart', left: 20, actor: true },
-  { kind: 'command', title: 'Place Order', left: 192, actor: true, hotspots: 1 },
-  { kind: 'aggregate', title: 'Order', left: 364 },
-  { kind: 'event', title: 'Order Placed', left: 536 },
-]
+const processIdFromHash = () => window.location.hash.match(/^#\/p\/([^/]+)/)?.[1] ?? null
 
 function App() {
-  const [selected, setSelected] = useState<BlockKind | null>('command')
-  const [tab, setTab] = useState('details')
+  const [processes, setProcesses] = useState<ProcessSummary[] | null>(null)
+  const [processId, setProcessId] = useState(processIdFromHash)
+  const [process, setProcess] = useState<Process | null>(null)
+  const [selection, setSelection] = useState<Selection>(null)
+  const [viewport, setViewport] = useState(INITIAL_VIEWPORT)
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
+  const [renaming, setRenaming] = useState(false)
 
-  const selectedBlock = canvasBlocks.find((b) => b.kind === selected)
+  const fail = useCallback((e: unknown) => setNotice({ text: e instanceof Error ? e.message : String(e), error: true }), [])
+
+  useEffect(() => {
+    const onHash = () => setProcessId(processIdFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  useEffect(() => {
+    api.listProcesses().then(setProcesses, fail)
+  }, [fail])
+
+  // With no process in the URL, open the first one.
+  useEffect(() => {
+    if (!processId && processes?.length) window.location.hash = `#/p/${processes[0].id}`
+  }, [processId, processes])
+
+  const reload = useCallback(() => {
+    if (!processId) return
+    api.getProcess(processId).then(
+      (p) => setProcess((cur) => (cur === null || cur.id === p.id ? p : cur)),
+      fail,
+    )
+  }, [processId, fail])
+
+  // Switching process starts from a clean view (and never shows the previous process while loading).
+  const [viewFor, setViewFor] = useState(processId)
+  if (viewFor !== processId) {
+    setViewFor(processId)
+    setProcess(null)
+    setSelection(null)
+    setViewport(INITIAL_VIEWPORT)
+  }
+
+  useEffect(() => {
+    if (!processId) return
+    let stale = false
+    api.getProcess(processId).then(
+      (p) => !stale && setProcess(p),
+      (e) => {
+        if (stale) return
+        fail(e)
+        // A dead link falls back to the first process.
+        window.location.hash = ''
+      },
+    )
+    return () => {
+      stale = true
+    }
+  }, [processId, fail])
+
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(null), notice.error ? 5000 : 2000)
+    return () => clearTimeout(t)
+  }, [notice])
+
+  /** Apply a change locally now, persist it, and resync from the server if persisting fails. */
+  const optimistic = useCallback(
+    (update: (p: Process) => Process, persist: () => Promise<unknown>) => {
+      setProcess((p) => (p ? update(p) : p))
+      persist().catch((e) => {
+        fail(e)
+        reload()
+      })
+    },
+    [fail, reload],
+  )
+
+  const patchBlock = (id: string, patch: BlockPatch) =>
+    optimistic(
+      (p) => ({
+        ...p,
+        blocks: p.blocks.map((b) =>
+          b.id === id ? { ...b, ...patch, actor: patch.actor === undefined ? b.actor : patch.actor || null } : b,
+        ),
+      }),
+      () => api.updateBlock(id, patch),
+    )
+
+  const deleteBlock = (id: string) => {
+    setSelection(null)
+    optimistic(
+      (p) => ({
+        ...p,
+        blocks: p.blocks.filter((b) => b.id !== id),
+        connections: p.connections.filter((c) => c.sourceId !== id && c.targetId !== id),
+      }),
+      () => api.deleteBlock(id),
+    )
+  }
+
+  const deleteConnection = (id: string) => {
+    setSelection(null)
+    optimistic((p) => ({ ...p, connections: p.connections.filter((c) => c.id !== id) }), () => api.deleteConnection(id))
+  }
+
+  const connect = async (sourceId: string, targetId: string) => {
+    if (!process) return
+    if (process.connections.some((c) => c.sourceId === sourceId && c.targetId === targetId)) return
+    try {
+      const connection = await api.createConnection(process.id, sourceId, targetId)
+      setProcess((p) => (p ? { ...p, connections: [...p.connections, connection] } : p))
+    } catch (e) {
+      fail(e)
+    }
+  }
+
+  /**
+   * New blocks continue the flow: placed one step right of the selected
+   * block (and connected from it), else right of the rightmost block,
+   * nudged down until the spot is free.
+   */
+  const addBlock = async (kind: BlockKind) => {
+    if (!process) return
+    const selected = selection?.type === 'block' ? process.blocks.find((b) => b.id === selection.id) : undefined
+    const anchor = selected ?? [...process.blocks].sort((a, b) => b.x - a.x)[0]
+    let x = anchor ? anchor.x + STEP_X : 80
+    let y = anchor ? anchor.y : 200
+    const occupied = (bx: number, by: number) =>
+      process.blocks.some((b) => Math.abs(b.x - bx) < BLOCK_WIDTH && Math.abs(b.y - by) < BLOCK_HEIGHT)
+    while (occupied(x, y)) y += STEP_Y
+    try {
+      const block = await api.createBlock(process.id, { kind, title: `New ${blockKindLabel[kind].toLowerCase()}`, x, y })
+      setProcess((p) => (p ? { ...p, blocks: [...p.blocks, block] } : p))
+      setSelection({ type: 'block', id: block.id })
+      if (selected) await connect(selected.id, block.id)
+    } catch (e) {
+      fail(e)
+    }
+  }
+
+  const createProcess = async () => {
+    try {
+      const created = await api.createProcess('Untitled process')
+      setProcesses((ps) => [...(ps ?? []), created])
+      setRenaming(true)
+      window.location.hash = `#/p/${created.id}`
+    } catch (e) {
+      fail(e)
+    }
+  }
+
+  const renameProcess = (name: string) => {
+    if (!process) return
+    setRenaming(false)
+    setProcesses((ps) => ps?.map((p) => (p.id === process.id ? { ...p, name } : p)) ?? ps)
+    optimistic((p) => ({ ...p, name }), () => api.renameProcess(process.id, name))
+  }
+
+  const deleteProcess = async () => {
+    if (!process || !window.confirm(`Delete “${process.name}” and all its blocks?`)) return
+    try {
+      await api.deleteProcess(process.id)
+      const rest = (processes ?? []).filter((p) => p.id !== process.id)
+      setProcesses(rest)
+      window.location.hash = rest.length ? `#/p/${rest[0].id}` : ''
+    } catch (e) {
+      fail(e)
+    }
+  }
+
+  const downloadCode = () => {
+    if (!process) return
+    const url = URL.createObjectURL(new Blob([generateProcess(process)], { type: 'text/x-go' }))
+    const a = Object.assign(document.createElement('a'), { href: url, download: `${goIdent(process.name).toLowerCase()}.go` })
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const share = () =>
+    navigator.clipboard.writeText(window.location.href).then(() => setNotice({ text: 'Link copied' }), fail)
+
+  // Delete/Backspace removes the selection; Escape clears it. Ignored while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (el.closest('input, textarea, [contenteditable="true"]')) return
+      if (e.key === 'Escape') setSelection(null)
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
+        e.preventDefault()
+        if (selection.type === 'block') deleteBlock(selection.id)
+        else deleteConnection(selection.id)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const selectedBlock: Block | undefined =
+    selection?.type === 'block' ? process?.blocks.find((b) => b.id === selection.id) : undefined
 
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar userInitial="F" userName="Fang">
         <NavGroupLabel>Processes</NavGroupLabel>
-        <NavItem href="#" active>
-          Place Order
-        </NavItem>
-        <NavItem href="#">Cancel Order</NavItem>
-
-        <div className="mt-nav-group-gap">
-          <NavGroupLabel>No project</NavGroupLabel>
-          <NavItem href="#">Register Customer</NavItem>
-        </div>
+        {processes?.map((p) => (
+          <NavItem key={p.id} href={`#/p/${p.id}`} active={p.id === processId}>
+            <span className="truncate">{p.id === process?.id ? process.name : p.name}</span>
+          </NavItem>
+        ))}
+        <button
+          type="button"
+          onClick={createProcess}
+          className="flex h-control-md items-center gap-step-lg rounded-lg border-0 bg-transparent py-0 pr-step-md pl-7.5 text-left text-body text-text-muted"
+        >
+          <span aria-hidden="true" className="w-indicator-xs text-center">+</span>
+          New process
+        </button>
       </Sidebar>
 
       <main className="flex min-w-0 flex-grow flex-col">
         <Header
-          title="Place Order"
+          title={
+            process ? (
+              <EditableText
+                key={process.id}
+                aria-label="Process name"
+                value={process.name}
+                required
+                autoFocus={renaming}
+                onCommit={renameProcess}
+                onBlur={() => setRenaming(false)}
+                className="-mx-1 w-96 px-1"
+              />
+            ) : (
+              'Stormm'
+            )
+          }
           actions={
-            <>
-              <Button variant="secondary">Share</Button>
-              <Button variant="primary">Generate code</Button>
-            </>
+            process && (
+              <>
+                {notice && (
+                  <span role="status" className={`mr-step-sm text-meta ${notice.error ? 'text-hotspot-text' : 'text-text-muted'}`}>
+                    {notice.text}
+                  </span>
+                )}
+                <Button variant="secondary" onClick={deleteProcess}>
+                  Delete
+                </Button>
+                <Button variant="secondary" onClick={share}>
+                  Share
+                </Button>
+                <Button variant="primary" onClick={downloadCode} disabled={!process.blocks.length}>
+                  Generate code
+                </Button>
+              </>
+            )
           }
         />
 
         <div className="flex min-h-0 flex-grow">
-          <section
-            aria-label="Process canvas"
-            className="relative flex-grow overflow-hidden bg-surface"
-            style={{
-              backgroundImage: 'radial-gradient(var(--color-canvas-dot) 1px, transparent 1px)',
-              backgroundSize: '20px 20px',
-            }}
-          >
-            <div className="absolute top-step-2xl left-step-2xl">
-              <ZoomControl percent={100} />
-            </div>
-
-            {canvasBlocks.map((block) => (
-              <button
-                key={block.kind}
-                type="button"
-                onClick={() => setSelected(block.kind)}
-                className="absolute cursor-pointer border-0 bg-transparent p-0 text-left"
-                style={{ left: block.left, top: 300 }}
-              >
-                <BlockCard
-                  kind={block.kind}
-                  title={block.title}
-                  actor={block.actor}
-                  hotspots={block.hotspots}
-                  selected={block.kind === selected}
-                />
-              </button>
-            ))}
-
-            <div className="absolute right-0 bottom-step-3xl left-0 flex justify-center px-step-3xl">
-              <div className="w-full max-w-2xl">
-                <Composer onAddBlock={(kind) => setSelected(kind)} />
-              </div>
-            </div>
-          </section>
-
-          {selectedBlock && (
-            <Panel kind={selectedBlock.kind} title={selectedBlock.title} onClose={() => setSelected(null)}>
-              <Tabs
-                tabs={[
-                  { id: 'details', label: 'Details' },
-                  { id: 'code', label: 'Code' },
-                ]}
-                activeId={tab}
-                onChange={setTab}
-              />
-
-              {tab === 'details' ? (
-                <>
-                  <PanelSection label="Fields">
-                    <FieldRow name="cartID" fieldType="CartID" />
-                    <FieldRow name="customerID" fieldType="CustomerID" />
-                    <FieldRow name="shippingAddress" fieldType="Address" />
-                  </PanelSection>
-                  <PanelSection label="Flow">
-                    <div className="flex h-control-md items-center gap-step-lg rounded-lg px-step-md text-body text-text">
-                      <span className="h-indicator-sm w-indicator-sm shrink-0 rounded-xs bg-aggregate" />
-                      <span className="flex-grow">Order</span>
-                      <span className="text-meta text-text-muted">handled by</span>
-                    </div>
-                  </PanelSection>
-                </>
-              ) : (
-                <PanelSection label="Generated files" action={<span className="font-mono text-chip text-text-muted">Go</span>}>
-                  <pre className="m-0 overflow-hidden rounded-lg bg-surface p-step-md font-mono text-[11px] leading-relaxed text-text">
-                    {`type PlaceOrder struct {\n    CartID          CartID\n    CustomerID      CustomerID\n    ShippingAddress Address\n}`}
-                  </pre>
-                </PanelSection>
+          {process ? (
+            <Canvas
+              blocks={process.blocks}
+              connections={process.connections}
+              selection={selection}
+              viewport={viewport}
+              onViewportChange={setViewport}
+              onSelect={setSelection}
+              onMoveBlock={(id, x, y) => patchBlock(id, { x, y })}
+              onConnect={connect}
+            >
+              {process.blocks.length === 0 && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-body text-text-muted">
+                  Add the first block with + below
+                </div>
               )}
-            </Panel>
+              <div className="absolute right-0 bottom-step-3xl left-0 flex justify-center px-step-3xl">
+                <div className="w-full max-w-2xl">
+                  <Composer
+                    placeholder="Add a block with +, drag the right port to connect"
+                    onAddBlock={addBlock}
+                  />
+                </div>
+              </div>
+            </Canvas>
+          ) : (
+            <section aria-label="Process canvas" className="flex flex-grow flex-col items-center justify-center gap-step-lg bg-surface text-body text-text-muted">
+              {notice?.error ? <span className="text-hotspot-text">{notice.text}</span> : null}
+              {processes === null || processes.length > 0 ? 'Loading…' : 'No processes yet.'}
+              {processes?.length === 0 && (
+                <Button variant="primary" onClick={createProcess}>
+                  New process
+                </Button>
+              )}
+            </section>
+          )}
+
+          {process && selectedBlock && (
+            <Inspector
+              key={selectedBlock.id}
+              block={selectedBlock}
+              process={process}
+              onChange={(patch) => patchBlock(selectedBlock.id, patch)}
+              onDelete={() => deleteBlock(selectedBlock.id)}
+              onSelectBlock={(id) => setSelection({ type: 'block', id })}
+              onClose={() => setSelection(null)}
+            />
           )}
         </div>
       </main>

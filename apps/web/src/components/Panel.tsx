@@ -5,7 +5,8 @@ import { blockKindClasses, blockKindLabel, type BlockKind } from './types'
 
 interface PanelProps {
   kind: BlockKind
-  title: string
+  /** Plain text, or an inline editor (see EditableText). */
+  title: ReactNode
   onClose?: () => void
   /**
    * `docked` sits flush against the app edge inside the normal layout

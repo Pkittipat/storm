@@ -14,3 +14,58 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+enum BlockKind {
+  readmodel
+  command
+  aggregate
+  event
+  policy
+  system
+}
+
+/// One business process being modeled — a sidebar row and its canvas.
+model Process {
+  id          String       @id @default(cuid())
+  name        String
+  blocks      Block[]
+  connections Connection[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+/// A canvas block. Actor and hotspots are attributes of a block, never blocks of their own.
+model Block {
+  id        String       @id @default(cuid())
+  processId String
+  process   Process      @relation(fields: [processId], references: [id], onDelete: Cascade)
+  kind      BlockKind
+  title     String
+  x         Float
+  y         Float
+  actor     String?
+  hotspots  String[]     @default([])
+  /// [{ name: string, type: string }]
+  fields    Json         @default("[]")
+  outgoing  Connection[] @relation("source")
+  incoming  Connection[] @relation("target")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([processId])
+}
+
+/// A directed edge from one block's right port to another block's left port.
+model Connection {
+  id        String   @id @default(cuid())
+  processId String
+  process   Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  sourceId  String
+  source    Block    @relation("source", fields: [sourceId], references: [id], onDelete: Cascade)
+  targetId  String
+  target    Block    @relation("target", fields: [targetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([sourceId, targetId])
+  @@index([processId])
+}

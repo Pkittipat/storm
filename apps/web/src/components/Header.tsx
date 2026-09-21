@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 
 interface HeaderProps {
-  title: string
+  /** Plain text, or an inline editor (see EditableText) for a renameable title. */
+  title: ReactNode
   /** Rendered before the title — e.g. a "show sidebars" IconButton in focus mode. */
   leading?: ReactNode
   actions?: ReactNode

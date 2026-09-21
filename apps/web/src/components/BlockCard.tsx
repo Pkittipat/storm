@@ -1,3 +1,4 @@
+import type { PointerEvent } from 'react'
 import { Chip } from './Chip'
 import { TypeSwatch } from './TypeSwatch'
 import { blockKindClasses, blockKindLabel, type BlockKind } from './types'
@@ -6,8 +7,11 @@ interface BlockCardProps {
   kind: BlockKind
   title: string
   selected?: boolean
-  actor?: boolean
+  /** Who performs this step (e.g. "Customer") — an attribute of the block, never a block of its own. */
+  actor?: string | null
   hotspots?: number
+  /** Makes the right-hand port a drag handle for drawing an outgoing connection. */
+  onConnectStart?: (e: PointerEvent<HTMLSpanElement>) => void
   /** Absolutely-positions the card on a canvas. Omit to let it flow inline (as in a palette/showcase). */
   position?: { left: number; top: number }
 }
@@ -23,7 +27,7 @@ interface BlockCardProps {
  * absolutely on a canvas surface (the parent must be `position:
  * relative`).
  */
-export function BlockCard({ kind, title, selected = false, actor, hotspots, position }: BlockCardProps) {
+export function BlockCard({ kind, title, selected = false, actor, hotspots, onConnectStart, position }: BlockCardProps) {
   const { surface, line } = blockKindClasses[kind]
   const portClass = selected ? 'border-accent' : 'border-port'
 
@@ -38,25 +42,38 @@ export function BlockCard({ kind, title, selected = false, actor, hotspots, posi
           selected ? 'border-[1.5px] border-accent ring-4 ring-accent/[14%]' : line
         }`}
       >
-        <div className="text-emphasis font-semibold text-text">{title}</div>
-        {(actor || hotspots) && (
+        <div className="line-clamp-2 text-emphasis font-semibold break-words text-text">{title}</div>
+        {actor || hotspots ? (
           <div className="mt-auto flex gap-step-2xs">
-            {actor && <Chip variant="actor">Customer</Chip>}
+            {actor && <Chip variant="actor">{actor}</Chip>}
             {hotspots ? <Chip variant="hotspot" aria-label={`${hotspots} hotspot`}>{hotspots}</Chip> : null}
           </div>
-        )}
+        ) : null}
         <Port className={portClass} side="left" />
-        <Port className={portClass} side="right" />
+        <Port className={portClass} side="right" onPointerDown={onConnectStart} />
       </div>
     </div>
   )
 }
 
-function Port({ side, className }: { side: 'left' | 'right'; className: string }) {
+function Port({
+  side,
+  className,
+  onPointerDown,
+}: {
+  side: 'left' | 'right'
+  className: string
+  onPointerDown?: (e: PointerEvent<HTMLSpanElement>) => void
+}) {
   return (
     <span
       aria-hidden="true"
-      className={`absolute top-11.75 box-border h-indicator-lg w-indicator-lg rounded-full border-[1.5px] bg-surface-raised ${
+      data-port={side}
+      onPointerDown={onPointerDown}
+      className={`absolute top-11.75 ${
+        // An invisible 25px hit area around the 9px dot, so it's grabbable.
+        onPointerDown ? "cursor-crosshair before:absolute before:-inset-2 before:content-['']" : ''
+      } box-border h-indicator-lg w-indicator-lg rounded-full border-[1.5px] bg-surface-raised ${
         side === 'left' ? '-left-indicator-offset' : '-right-indicator-offset'
       } ${className}`}
     />
