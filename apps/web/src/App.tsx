@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type Block, type BlockPatch, type Process, type ProcessSummary } from './api'
+import { api, type Block, type BlockPatch, type Process, type ProcessSummary, type Project } from './api'
 import { Canvas, type Selection, type Viewport } from './canvas/Canvas'
 import { BLOCK_HEIGHT, BLOCK_WIDTH } from './canvas/geometry'
 import { Inspector } from './canvas/Inspector'
@@ -9,21 +9,32 @@ import {
   Composer,
   EditableText,
   Header,
-  NavGroupLabel,
-  NavItem,
+  IconButton,
   Sidebar,
   blockKindLabel,
   type BlockKind,
 } from './components'
+import { ProcessNav } from './ProcessNav'
 
 const INITIAL_VIEWPORT: Viewport = { x: 40, y: 80, zoom: 1 }
 const STEP_X = 180
 const STEP_Y = 160
 
+const SIDEBAR_KEY = 'stormm.sidebarHidden'
+const readSidebarHidden = () => {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 const processIdFromHash = () => window.location.hash.match(/^#\/p\/([^/]+)/)?.[1] ?? null
 
 function App() {
   const [processes, setProcesses] = useState<ProcessSummary[] | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [sidebarHidden, setSidebarHidden] = useState(readSidebarHidden)
   const [processId, setProcessId] = useState(processIdFromHash)
   const [process, setProcess] = useState<Process | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
@@ -41,7 +52,17 @@ function App() {
 
   useEffect(() => {
     api.listProcesses().then(setProcesses, fail)
+    api.listProjects().then(setProjects, fail)
   }, [fail])
+
+  const toggleSidebar = (hidden: boolean) => {
+    setSidebarHidden(hidden)
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(hidden))
+    } catch {
+      // Not persisted — stays for this page load.
+    }
+  }
 
   // With no process in the URL, open the first one.
   useEffect(() => {
@@ -163,9 +184,9 @@ function App() {
     }
   }
 
-  const createProcess = async () => {
+  const createProcess = async (projectId: string | null = null) => {
     try {
-      const created = await api.createProcess('Untitled process')
+      const created = await api.createProcess('Untitled process', projectId)
       setProcesses((ps) => [...(ps ?? []), created])
       setRenaming(true)
       window.location.hash = `#/p/${created.id}`
@@ -179,6 +200,46 @@ function App() {
     setRenaming(false)
     setProcesses((ps) => ps?.map((p) => (p.id === process.id ? { ...p, name } : p)) ?? ps)
     optimistic((p) => ({ ...p, name }), () => api.renameProcess(process.id, name))
+  }
+
+  const moveProcess = (id: string, projectId: string | null) => {
+    setProcesses((ps) => ps?.map((p) => (p.id === id ? { ...p, projectId } : p)) ?? ps)
+    setProcess((p) => (p?.id === id ? { ...p, projectId } : p))
+    api.moveProcess(id, projectId).catch((e) => {
+      fail(e)
+      api.listProcesses().then(setProcesses, fail)
+    })
+  }
+
+  const createProject = async () => {
+    try {
+      const project = await api.createProject('Untitled project')
+      setProjects((ps) => [...ps, project])
+      return project
+    } catch (e) {
+      fail(e)
+    }
+  }
+
+  const renameProject = (id: string, name: string) => {
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p)))
+    api.renameProject(id, name).catch((e) => {
+      fail(e)
+      api.listProjects().then(setProjects, fail)
+    })
+  }
+
+  /** Its processes are kept and move to "No project". */
+  const deleteProject = async (project: Project) => {
+    if (!window.confirm(`Delete the “${project.name}” project? Its processes move to No project.`)) return
+    try {
+      await api.deleteProject(project.id)
+      setProjects((ps) => ps.filter((p) => p.id !== project.id))
+      setProcesses((ps) => ps?.map((p) => (p.projectId === project.id ? { ...p, projectId: null } : p)) ?? ps)
+      setProcess((p) => (p?.projectId === project.id ? { ...p, projectId: null } : p))
+    } catch (e) {
+      fail(e)
+    }
   }
 
   const deleteProcess = async () => {
@@ -225,25 +286,29 @@ function App() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar userInitial="F" userName="Fang">
-        <NavGroupLabel>Processes</NavGroupLabel>
-        {processes?.map((p) => (
-          <NavItem key={p.id} href={`#/p/${p.id}`} active={p.id === processId}>
-            <span className="truncate">{p.id === process?.id ? process.name : p.name}</span>
-          </NavItem>
-        ))}
-        <button
-          type="button"
-          onClick={createProcess}
-          className="flex h-control-md items-center gap-step-lg rounded-lg border-0 bg-transparent py-0 pr-step-md pl-7.5 text-left text-body text-text-muted"
-        >
-          <span aria-hidden="true" className="w-indicator-xs text-center">+</span>
-          New process
-        </button>
-      </Sidebar>
+      {!sidebarHidden && (
+        <Sidebar userInitial="F" userName="Fang" onCollapse={() => toggleSidebar(true)}>
+          <ProcessNav
+            // The open process's name is live (edited in the header) before the list is refetched.
+            processes={processes?.map((p) => (p.id === process?.id ? { ...p, name: process.name } : p)) ?? null}
+            projects={projects}
+            activeId={processId}
+            onNewProcess={createProcess}
+            onMoveProcess={moveProcess}
+            onNewProject={createProject}
+            onRenameProject={renameProject}
+            onDeleteProject={deleteProject}
+          />
+        </Sidebar>
+      )}
 
       <main className="flex min-w-0 flex-grow flex-col">
         <Header
+          leading={
+            sidebarHidden && (
+              <IconButton size="md" aria-label="Show sidebar" onClick={() => toggleSidebar(false)} icon={<SidebarIcon />} />
+            )
+          }
           title={
             process ? (
               <EditableText
@@ -254,7 +319,7 @@ function App() {
                 autoFocus={renaming}
                 onCommit={renameProcess}
                 onBlur={() => setRenaming(false)}
-                className="-mx-1 w-96 px-1"
+                className="-mx-1 w-96 max-w-full px-1"
               />
             ) : (
               'Stormm'
@@ -313,7 +378,7 @@ function App() {
               {notice?.error ? <span className="text-hotspot-text">{notice.text}</span> : null}
               {processes === null || processes.length > 0 ? 'Loading…' : 'No processes yet.'}
               {processes?.length === 0 && (
-                <Button variant="primary" onClick={createProcess}>
+                <Button variant="primary" onClick={() => createProcess()}>
                   New process
                 </Button>
               )}
@@ -334,6 +399,15 @@ function App() {
         </div>
       </main>
     </div>
+  )
+}
+
+function SidebarIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </svg>
   )
 }
 

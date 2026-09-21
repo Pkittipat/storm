@@ -25,17 +25,18 @@ rule this out.
 | Class | Value | Use for |
 |---|---|---|
 | `bg-surface` | `#FBFAF8` | App/page background, canvas background, recessed code blocks |
-| `bg-surface-sunken` | `#F4F3EF` | Sidebar nav rail, docked inspector panel |
+| `bg-surface-sunken` | `#F4F3EF` | Sidebar nav rail, docked inspector panel; Menu item hover |
 | `bg-surface-raised` | `#FFFFFF` | Floating controls: bordered buttons, zoom stepper, composer, dropdown menus, undocked inspector |
 | `bg-surface-selected` | `#EAE8E3` | Active item inside sunken chrome: current nav link, active tab |
+| `bg-surface-hover` | `#EEECE8` | Hover fill for rows in sunken chrome: NavItem, sidebar "New" row (NavProject headings stay unfilled) |
 
 ## Border (graduated hairlines)
 
 | Class | Value | Use for |
 |---|---|---|
-| `border-border` | `#E6E4DF` | Default hairline on surface-sunken (sidebar edge, panel dividers) |
+| `border-border` | `#E6E4DF` | Default hairline on surface-sunken (sidebar edge, panel dividers); Menu section divider |
 | `border-border-subtle` | `#ECEAE5` | Lightest hairline — app header bottom border only |
-| `border-border-input` | `#E0DED8` | Bordered control on surface-raised (e.g. "Share" button) |
+| `border-border-input` | `#E0DED8` | Bordered control on surface-raised (e.g. "Share" button); sidebar search field ring |
 | `border-border-elevated` | `#E3E1DB` | Floating/shadowed surfaces (composer, dropdown menus) |
 | `border-border-dot` | `#A3A09A` | Inactive small indicator dot ring |
 | `border-port` | `#A9A6A0` | Default (unselected) canvas block connector-port ring |
@@ -79,7 +80,7 @@ A **selected** block ignores `-line` and uses a 1.5px `border-accent` + `ring-4 
 | Class | Value | Use for |
 |---|---|---|
 | `bg-actor` / `text-actor-text` | `#F7D54A` / `#3D3000` | Actor chip (e.g. "Customer") |
-| `bg-hotspot-surface` / `text-hotspot-text` | `#FBE3E0` / `#A8291F` | Hotspot-count chip on a block |
+| `bg-hotspot-surface` / `text-hotspot-text` | `#FBE3E0` / `#A8291F` | Hotspot-count chip on a block; `text-hotspot-text` also for error notices and destructive Menu items |
 | `bg-hotspot-dot` | `#C2362B` | Warning dot in the Hotspots list (not interchangeable with hotspot-text) |
 
 ## Typography
@@ -90,7 +91,7 @@ A **selected** block ignores `-line` and uses a 1.5px `border-accent` + `ring-4 
 | `font-mono` | Geist Mono | Code, field keys/types, numeric values, eyebrow labels |
 | `text-micro` | 11px | Uppercase micro-labels/eyebrows |
 | `text-meta` | 12px | Secondary meta text, mono readouts |
-| `text-label` | 13px | Toolbar buttons, section labels |
+| `text-label` | 13px | Toolbar buttons, section labels, sidebar "Projects" heading + search, Menu items |
 | `text-body` | 14px | Default interactive/body text (most-used size) |
 | `text-emphasis` | 15px | Block/card titles, page h1, composer input |
 | `text-heading` | 16px | Wordmark, inspector panel heading |
@@ -118,10 +119,11 @@ actually meant for).
 | `step-sm` | 8px | Button icon+label gap, Composer's row gap, Header's action gap, ZoomControl/AddBlockMenu inset |
 | `step-md` | 10px | AddBlockMenu item gap, Sidebar wordmark/footer gaps, standard row inset (NavItem, Tabs, FieldRow) |
 | `step-lg` | 12px | NavItem/Header leading-icon gap, BlockCard padding, Sidebar/Panel outer padding, Flow row gap |
-| `step-xl` | 14px | PanelSection's divider top-margin/padding rhythm |
-| `step-2xl` | 16px | Header's outer edge padding, floating Panel's inset from the viewport edge |
+| `step-xl` | 14px | PanelSection's divider top-margin/padding rhythm; gap between sidebar NavProject groups |
+| `step-2xl` | 16px | Header's outer edge padding, floating Panel's inset from the viewport edge, NavItem's left inset |
 | `step-3xl` | 24px | Header's default left padding, Composer's inset from the canvas edges |
 | `nav-group-gap` | 22px | ONLY the top margin above a second+ sidebar NavGroupLabel |
+| `nav-section-gap` | 20px | ONLY the top margin between the sidebar's "New" row and the "Projects" heading |
 | `chip-inset` | 7px | ONLY Chip's horizontal padding (half-step between step-xs and step-sm) |
 
 **Control size** — recurring interactive-element heights (and, where noted, widths):
@@ -129,10 +131,10 @@ actually meant for).
 | Class | Value | Use for |
 |---|---|---|
 | `control-2xs` | 22px | Chip height |
-| `control-xs` | 28px | IconButton `sm`, ZoomControl's +/− buttons, PanelSection header row |
-| `control-sm` | 30px | Avatar diameter, AddBlockMenu item row, ZoomControl button width |
-| `control-md` | 32px | IconButton `md`, NavItem, Tabs, FieldRow |
-| `control-lg` | 36px | Button (toolbar), ZoomControl shell, Composer's send button |
+| `control-xs` | 28px | IconButton `sm`, ZoomControl's +/− buttons, PanelSection header row, sidebar "Projects" row + search field, NavItem's right padding for its ⋮ action; IconButton `sm` is also every sidebar row action (`+`, search, sort, ⋮) |
+| `control-sm` | 30px | Avatar diameter, Menu/AddBlockMenu item row, ZoomControl button width |
+| `control-md` | 32px | IconButton `md`, NavItem, NavProject heading, Tabs, FieldRow |
+| `control-lg` | 36px | Button (toolbar), ZoomControl shell, Composer's send button, sidebar "New" row |
 | `control-xl` | 40px | Composer's add-block button and text input |
 
 **Indicator size** — small circular/square status marks:
@@ -146,7 +148,8 @@ actually meant for).
 | `indicator-offset` | 5px | How far a port dot hangs off its card's edge (always negative) |
 
 **Structure** — one-off layout constants: `header-height`(56px), `sidebar-width`(256px),
-`panel-width`(288px), `node-width`(140px), `node-height`(104px), `menu-width`(184px).
+`panel-width`(288px), `node-width`(140px), `node-height`(104px), `menu-width`(184px — every
+Menu: AddBlockMenu, the sidebar's sort/project/process menus).
 
 ## Radius
 

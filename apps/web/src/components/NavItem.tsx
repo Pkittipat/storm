@@ -2,6 +2,11 @@ import type { AnchorHTMLAttributes, ReactNode } from 'react'
 
 interface NavItemProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
   active?: boolean
+  /**
+   * Hover/focus-revealed buttons on the row's right edge (e.g. a ⋮ menu).
+   * They sit beside the link, never inside it — a button can't nest in an <a>.
+   */
+  actions?: ReactNode
   children: ReactNode
 }
 
@@ -9,17 +14,14 @@ interface NavItemProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
  * A leaf link in the sidebar process list — a 32px row with a leading
  * status dot. `active` fills the row with surface-selected, bumps the
  * label to semibold, and fills the dot; inactive rows get an outlined
- * dot instead. The 30px left indent is a raw value, not a spacing
- * token — it's a one-off alignment offset (clears the group label's
- * bullet above it), not a reused rhythm, so it stays literal.
+ * dot instead. The 16px left inset (step-2xl) sets the dot just
+ * inside its NavProject heading's name, which starts at step-md.
  */
-export function NavItem({ active = false, children, className = '', ...props }: NavItemProps) {
-  return (
+export function NavItem({ active = false, actions, children, className = '', ...props }: NavItemProps) {
+  const link = (
     <a
       aria-current={active ? 'page' : undefined}
-      className={`flex h-control-md items-center gap-step-lg rounded-lg py-0 pr-step-md pl-7.5 text-body no-underline ${
-        active ? 'bg-surface-selected font-semibold text-text' : 'font-normal text-text'
-      } ${className}`}
+      className={`flex h-control-md shrink-0 items-center gap-step-lg rounded-lg py-0 text-body no-underline ${actions ? 'pr-control-xs' : 'pr-step-md'} pl-step-2xl ${active ? 'bg-surface-selected font-semibold text-text' : 'font-normal text-text group-hover:bg-surface-hover hover:bg-surface-hover'} ${className}`}
       {...props}
     >
       <span
@@ -32,6 +34,15 @@ export function NavItem({ active = false, children, className = '', ...props }: 
       />
       {children}
     </a>
+  )
+  if (!actions) return link
+  return (
+    <div className="group relative flex shrink-0 flex-col">
+      {link}
+      <span className="absolute inset-y-0 right-0 flex items-center pr-step-2xs opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+        {actions}
+      </span>
+    </div>
   )
 }
 

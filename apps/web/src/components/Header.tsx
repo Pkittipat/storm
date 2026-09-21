@@ -22,11 +22,11 @@ export function Header({ title, leading, actions }: HeaderProps) {
         leading ? 'pl-step-lg' : 'pl-step-3xl'
       }`}
     >
-      <div className="flex items-center gap-step-lg">
+      <div className="flex min-w-0 items-center gap-step-lg">
         {leading}
-        <h1 className="m-0 text-emphasis font-semibold text-text">{title}</h1>
+        <h1 className="m-0 min-w-0 text-emphasis font-semibold text-text">{title}</h1>
       </div>
-      {actions && <div className="flex items-center gap-step-sm">{actions}</div>}
+      {actions && <div className="flex shrink-0 items-center gap-step-sm whitespace-nowrap">{actions}</div>}
     </header>
   )
 }

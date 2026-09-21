@@ -51,7 +51,8 @@
 
   /* Usage: chrome regions that sit visually *below* the canvas: the
      left nav sidebar and a *docked* inspector panel. Never use this
-     for floating/overlaid elements — see surface-raised. */
+     for floating/overlaid elements — see surface-raised. Also the
+     hover fill of a Menu item (which sits on surface-raised). */
   --color-surface-sunken: #f4f3ef;
 
   /* Usage: elevated surfaces that float *above* the canvas and need to
@@ -70,6 +71,13 @@
      (that uses --color-accent-subtle). */
   --color-surface-selected: #eae8e3;
 
+  /* Usage: hover fill for rows inside surface-
+     sunken chrome — a sidebar NavItem and the sidebar "New" row
+     (NavProject headings stay unfilled). Halfway-ish between surface-sunken and
+     surface-selected (surface-selected at 60% over sunken) so a
+     hovered row never reads as the current one. */
+  --color-surface-hover: #eeece8;
+
   /* ============================================================
    * COLOR — BORDER (graduated 1px hairlines)
    * ============================================================
@@ -80,7 +88,8 @@
 
   /* Usage: default hairline for chrome that sits on surface-sunken:
      sidebar/inspector outer edge, dividers between stacked sections
-     inside a panel, the zoom stepper's own outline. */
+     inside a panel, the zoom stepper's own outline, and the divider
+     between sections of a Menu. */
   --color-border: #e6e4df;
 
   /* Usage: the single lightest hairline — reserved for the app header's
@@ -90,7 +99,8 @@
 
   /* Usage: border for a bordered control resting on --color-surface-
      raised (e.g. the "Share" secondary button) — one step darker than
-     --color-border so it stays legible against white. */
+     --color-border so it stays legible against white. Also the ring
+     around the sidebar's process search field. */
   --color-border-input: #e0ded8;
 
   /* Usage: border for shadowed/floating surfaces — the composer bar and
@@ -218,7 +228,9 @@
   --color-actor: #f7d54a;
   --color-actor-text: #3d3000;
 
-  /* Usage: the hotspot-count chip on a block header (e.g. "1 hotspot"). */
+  /* Usage: the hotspot-count chip on a block header (e.g. "1 hotspot").
+     hotspot-text doubles as the error/destructive text color: error
+     notices and destructive Menu items ("Delete project"). */
   --color-hotspot-surface: #fbe3e0;
   --color-hotspot-text: #a8291f;
 
@@ -260,8 +272,9 @@
   --text-meta--line-height: 1.5;
 
   /* Usage: UI chrome section labels and toolbar buttons — "Share" /
-     "Generate code", and inspector group labels (Actor, Fields,
-     Hotspots, Flow, Generated files). */
+     "Generate code", inspector group labels (Actor, Fields,
+     Hotspots, Flow, Generated files), the sidebar's "Projects"
+     heading and search field, and Menu item labels. */
   --text-label: 13px;
   --text-label--line-height: 1.4;
 
@@ -361,11 +374,13 @@
      icon gap. */
   --spacing-step-lg: 12px;
 
-  /* Usage: PanelSection's divider top-margin/top-padding rhythm. */
+  /* Usage: PanelSection's divider top-margin/top-padding rhythm, and
+     the gap between NavProject groups in the sidebar. */
   --spacing-step-xl: 14px;
 
-  /* Usage: Header's outer horizontal edge padding, and the floating
-     Panel variant's inset from the viewport edge. */
+  /* Usage: Header's outer horizontal edge padding, the floating
+     Panel variant's inset from the viewport edge, and a NavItem's
+     left inset (sets its dot just inside the group heading's name). */
   --spacing-step-2xl: 16px;
 
   /* Usage: Header's default left padding (when no leading icon
@@ -374,11 +389,15 @@
   --spacing-step-3xl: 24px;
 
   /* Usage: ONLY the top margin above a second+ NavGroupLabel in the
-     sidebar (e.g. above "No project") — sits between step-2xl(16) and
+     sidebar — sits between step-2xl(16) and
      step-3xl(24) on the ladder but is a one-off named separately
      since it's tied to one specific relationship (group-to-group),
      not a general-purpose step. */
   --spacing-nav-group-gap: 22px;
+
+  /* Usage: ONLY the top margin between the sidebar's "New" row and
+     the "Projects" heading below it — a one-off, like nav-group-gap. */
+  --spacing-nav-section-gap: 20px;
 
   /* ============================================================
    * SPACING — CONTROL SIZE
@@ -397,19 +416,22 @@
   --spacing-chip-inset: 7px;
 
   /* Usage: IconButton `sm`, ZoomControl's +/− buttons, a PanelSection
-     header row. */
+     header row, the sidebar's "Projects" heading row and its search
+     field, and the right padding a NavItem reserves for its ⋮ action
+     (`pr-control-xs`). */
   --spacing-control-xs: 28px;
 
-  /* Usage: Avatar diameter, an AddBlockMenu item row, ZoomControl's
+  /* Usage: Avatar diameter, a Menu/AddBlockMenu item row, ZoomControl's
      button width (its height is control-xs — the source uses a
      30×28 button, not a square one). */
   --spacing-control-sm: 30px;
 
-  /* Usage: IconButton `md`, NavItem, Tabs, FieldRow. */
+  /* Usage: IconButton `md`, NavItem, a NavProject heading, Tabs,
+     FieldRow. */
   --spacing-control-md: 32px;
 
   /* Usage: Button (toolbar), the ZoomControl shell, Composer's
-     circular send button. */
+     circular send button, the sidebar's "New" row. */
   --spacing-control-lg: 36px;
 
   /* Usage: Composer's add-block button and its text input. */

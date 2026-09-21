@@ -16,7 +16,7 @@ export class ProcessesService {
 
   listProcesses() {
     return this.prisma.process.findMany({
-      select: { id: true, name: true, updatedAt: true },
+      select: { id: true, name: true, projectId: true, updatedAt: true },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -33,16 +33,21 @@ export class ProcessesService {
     return process;
   }
 
-  createProcess(dto: CreateProcessDto) {
+  async createProcess(dto: CreateProcessDto) {
+    await this.assertProject(dto.projectId);
     return this.prisma.process.create({
-      data: { name: dto.name },
+      data: { name: dto.name, projectId: dto.projectId ?? null },
       include: { blocks: true, connections: true },
     });
   }
 
   async updateProcess(id: string, dto: UpdateProcessDto) {
     await this.getProcess(id);
-    return this.prisma.process.update({ where: { id }, data: { name: dto.name } });
+    await this.assertProject(dto.projectId);
+    return this.prisma.process.update({
+      where: { id },
+      data: { name: dto.name, projectId: dto.projectId },
+    });
   }
 
   async deleteProcess(id: string) {
@@ -103,6 +108,13 @@ export class ProcessesService {
     const connection = await this.prisma.connection.findUnique({ where: { id } });
     if (!connection) throw new NotFoundException(`Connection ${id} not found`);
     await this.prisma.connection.delete({ where: { id } });
+  }
+
+  /** A process may only point at a project that exists (null/undefined = none/unchanged). */
+  private async assertProject(projectId: string | null | undefined) {
+    if (!projectId) return;
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new BadRequestException(`Project ${projectId} not found`);
   }
 
   private async findBlock(id: string) {

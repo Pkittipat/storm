@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Avatar } from './Avatar'
 import { IconButton } from './IconButton'
 import { NavGroupLabel, NavItem } from './NavItem'
+import { NavProject } from './NavProject'
 
 interface SidebarProps {
   userInitial: string
@@ -12,10 +13,10 @@ interface SidebarProps {
 
 /**
  * The 256px process-list rail. `children` is the nav tree — compose it
- * from NavGroupLabel + NavItem. This component only owns the outer
- * chrome (wordmark, collapse button, user footer); it holds no nav-tree
- * state (no accordion expand/collapse) — that's app-level, not a design
- * token concern.
+ * from NavProject, NavGroupLabel and NavItem; it scrolls when it
+ * overflows. This component only owns the outer chrome (wordmark,
+ * collapse button, user footer); it holds no nav-tree state (which
+ * projects are expanded, search) — that's app-level.
  */
 export function Sidebar({ userInitial, userName, onCollapse, children }: SidebarProps) {
   return (
@@ -28,7 +29,7 @@ export function Sidebar({ userInitial, userName, onCollapse, children }: Sidebar
         {onCollapse && <IconButton size="md" aria-label="Hide sidebars" onClick={onCollapse} icon={<CollapseIcon />} />}
       </div>
 
-      <div className="flex flex-col gap-px">{children}</div>
+      <div className="-mx-step-lg flex min-h-0 flex-grow flex-col gap-px overflow-y-auto px-step-lg pb-step-lg">{children}</div>
 
       <div className="mt-auto flex items-center gap-step-md border-t border-border p-step-sm pt-step-md">
         <Avatar initial={userInitial} />
@@ -38,7 +39,7 @@ export function Sidebar({ userInitial, userName, onCollapse, children }: Sidebar
   )
 }
 
-export { NavGroupLabel, NavItem }
+export { NavGroupLabel, NavItem, NavProject }
 
 function StormmMark() {
   return (
