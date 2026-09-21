@@ -1,30 +1,29 @@
+import type { Block, BlockPatch, Board, Field } from '@stormm/process-model'
 import { useState } from 'react'
-import type { Block, BlockField, BlockPatch, Process } from '../api'
-import { EditableText, IconButton, Panel, PanelSection, Tabs, TypeSwatch } from '../components'
-import { generateBlock } from '../codegen'
+import { EditableText, IconButton, Panel, PanelSection, TypeSwatch } from '../components'
 
 interface InspectorProps {
   block: Block
-  process: Process
+  board: Board
   onChange: (patch: BlockPatch) => void
   onDelete: () => void
   onSelectBlock: (id: string) => void
   onClose: () => void
 }
 
-/** The docked block inspector: edit a block's title, actor, hotspots and fields; preview its generated Go. */
-export function Inspector({ block, process, onChange, onDelete, onSelectBlock, onClose }: InspectorProps) {
-  const [tab, setTab] = useState('details')
+/** The docked block inspector: edit a block's title, actor, hotspots and fields, and see what it connects to. */
+export function Inspector({ block, board, onChange, onDelete, onSelectBlock, onClose }: InspectorProps) {
   // The row just added via "+", focused with its placeholder selected.
   const [fresh, setFresh] = useState<'hotspot' | 'field' | null>(null)
-  const byId = new Map(process.blocks.map((b) => [b.id, b]))
-  const flow = process.connections.flatMap((c) => {
-    if (c.sourceId === block.id) return byId.has(c.targetId) ? [{ id: c.id, block: byId.get(c.targetId)!, dir: 'to' }] : []
-    if (c.targetId === block.id) return byId.has(c.sourceId) ? [{ id: c.id, block: byId.get(c.sourceId)!, dir: 'from' }] : []
+  const byId = new Map(board.blocks.map((b) => [b.id, b]))
+  const links = board.connections.flatMap((c) => {
+    const id = `${c.from}->${c.to}`
+    if (c.from === block.id) return byId.has(c.to) ? [{ id, block: byId.get(c.to)!, dir: 'to' }] : []
+    if (c.to === block.id) return byId.has(c.from) ? [{ id, block: byId.get(c.from)!, dir: 'from' }] : []
     return []
   })
 
-  const setFields = (fields: BlockField[]) => onChange({ fields })
+  const setFields = (fields: Field[]) => onChange({ fields })
   const setHotspots = (hotspots: string[]) => onChange({ hotspots })
 
   return (
@@ -42,18 +41,7 @@ export function Inspector({ block, process, onChange, onDelete, onSelectBlock, o
       }
       onClose={onClose}
     >
-      <Tabs
-        tabs={[
-          { id: 'details', label: 'Details' },
-          { id: 'code', label: 'Code' },
-        ]}
-        activeId={tab}
-        onChange={setTab}
-      />
-
       <div className="-mx-step-lg min-h-0 flex-grow overflow-y-auto px-step-lg">
-        {tab === 'details' ? (
-          <>
             <PanelSection label="Actor">
               <EditableText
                 aria-label="Actor"
@@ -112,9 +100,9 @@ export function Inspector({ block, process, onChange, onDelete, onSelectBlock, o
               ))}
             </PanelSection>
 
-            <PanelSection label="Flow">
-              {flow.length === 0 && <Empty>Drag from the right port to connect</Empty>}
-              {flow.map((f) => (
+            <PanelSection label="Connections">
+              {links.length === 0 && <Empty>Drag from the right port to connect</Empty>}
+              {links.map((f) => (
                 <button
                   key={f.id}
                   type="button"
@@ -133,12 +121,6 @@ export function Inspector({ block, process, onChange, onDelete, onSelectBlock, o
                 Delete block
               </button>
             </div>
-          </>
-        ) : (
-          <PanelSection label="Generated code" action={<span className="font-mono text-chip text-text-muted">Go</span>}>
-            <pre className="m-0 overflow-x-auto rounded-lg bg-surface p-step-md font-mono text-[11px] leading-relaxed text-text">{generateBlock(block, process)}</pre>
-          </PanelSection>
-        )}
       </div>
     </Panel>
   )

@@ -1,28 +1,4 @@
-import type { BlockKind } from './components'
-
-export interface BlockField {
-  name: string
-  type: string
-}
-
-export interface Block {
-  id: string
-  processId: string
-  kind: BlockKind
-  title: string
-  x: number
-  y: number
-  actor: string | null
-  hotspots: string[]
-  fields: BlockField[]
-}
-
-export interface Connection {
-  id: string
-  processId: string
-  sourceId: string
-  targetId: string
-}
+import type { Board, Issue } from '@stormm/process-model'
 
 export interface Project {
   id: string
@@ -34,14 +10,28 @@ export interface ProcessSummary {
   name: string
   /** null = listed under "No project". */
   projectId: string | null
+  /** The file can't be read as a process (e.g. a bad hand edit); opening it explains why. */
+  broken?: boolean
 }
 
-export interface Process extends ProcessSummary {
-  blocks: Block[]
-  connections: Connection[]
+/** One `stormm/processes/<id>.yaml` file as the API returns it. */
+export interface ProcessFile {
+  projectId: string | null
+  board: Board
+  /** Git blob SHA of the stored file; a save must name the version it builds on. */
+  version: string
+  issues: Issue[]
 }
 
-export type BlockPatch = Partial<Pick<Block, 'title' | 'x' | 'y' | 'hotspots' | 'fields'>> & { actor?: string }
+export class ApiError extends Error {
+  readonly status: number
+  readonly body: { message?: string | string[]; issues?: Issue[]; version?: string } | null
+  constructor(message: string, status: number, body: ApiError['body']) {
+    super(message)
+    this.status = status
+    this.body = body
+  }
+}
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -52,27 +42,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) {
     const data = await res.json().catch(() => null)
     const message = Array.isArray(data?.message) ? data.message.join(', ') : data?.message
-    throw new Error(message ?? `${method} ${path} failed (${res.status})`)
+    throw new ApiError(message ?? `${method} ${path} failed (${res.status})`, res.status, data)
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }
 
 export const api = {
   listProcesses: () => request<ProcessSummary[]>('GET', '/processes'),
-  getProcess: (id: string) => request<Process>('GET', `/processes/${id}`),
-  createProcess: (name: string, projectId: string | null = null) => request<Process>('POST', '/processes', { name, projectId }),
-  renameProcess: (id: string, name: string) => request<ProcessSummary>('PATCH', `/processes/${id}`, { name }),
+  getProcess: (id: string) => request<ProcessFile>('GET', `/processes/${id}`),
+  createProcess: (name: string, projectId: string | null = null) => request<ProcessFile>('POST', '/processes', { name, projectId }),
+  /** Replaces the whole file; refused (409) if it changed since `baseVersion`, or (422) if the YAML has errors. */
+  saveProcess: (id: string, yaml: string, baseVersion: string) => request<ProcessFile>('PUT', `/processes/${id}`, { yaml, baseVersion }),
   moveProcess: (id: string, projectId: string | null) => request<ProcessSummary>('PATCH', `/processes/${id}`, { projectId }),
   deleteProcess: (id: string) => request<void>('DELETE', `/processes/${id}`),
   listProjects: () => request<Project[]>('GET', '/projects'),
   createProject: (name: string) => request<Project>('POST', '/projects', { name }),
   renameProject: (id: string, name: string) => request<Project>('PATCH', `/projects/${id}`, { name }),
   deleteProject: (id: string) => request<void>('DELETE', `/projects/${id}`),
-  createBlock: (processId: string, block: Pick<Block, 'kind' | 'title' | 'x' | 'y'>) =>
-    request<Block>('POST', `/processes/${processId}/blocks`, block),
-  updateBlock: (id: string, patch: BlockPatch) => request<Block>('PATCH', `/blocks/${id}`, patch),
-  deleteBlock: (id: string) => request<void>('DELETE', `/blocks/${id}`),
-  createConnection: (processId: string, sourceId: string, targetId: string) =>
-    request<Connection>('POST', `/processes/${processId}/connections`, { sourceId, targetId }),
-  deleteConnection: (id: string) => request<void>('DELETE', `/connections/${id}`),
 }

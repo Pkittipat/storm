@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import type { Block, Connection } from '../api'
-import { BlockCard, ZoomControl } from '../components'
+import { BlockCard, ZoomControl, type BlockKind } from '../components'
 import { BLOCK_HEIGHT, BLOCK_WIDTH, PORT_Y, connectorPath, snap, type Point } from './geometry'
 
 export type Selection = { type: 'block'; id: string } | { type: 'connection'; id: string } | null
@@ -11,9 +10,27 @@ export interface Viewport {
   zoom: number
 }
 
+/** A block where it currently sits: its derived position, or where this viewer dragged it. */
+export interface CanvasBlock {
+  id: string
+  kind: BlockKind
+  title: string
+  actor?: string
+  hotspots: number
+  x: number
+  y: number
+}
+
+export interface CanvasConnection {
+  /** `from->to`, stable across saves. */
+  id: string
+  from: string
+  to: string
+}
+
 interface CanvasProps {
-  blocks: Block[]
-  connections: Connection[]
+  blocks: CanvasBlock[]
+  connections: CanvasConnection[]
   selection: Selection
   viewport: Viewport
   onViewportChange: (v: Viewport) => void
@@ -125,7 +142,7 @@ export function Canvas({
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Pan just enough to bring a newly selected block into view (e.g. one just added, or picked from the inspector's Flow list).
+  // Pan just enough to bring a newly selected block into view (e.g. one just added, or picked from the inspector's Connections list).
   const revealed = useRef<string | null>(null)
   useEffect(() => {
     const id = selection?.type === 'block' ? selection.id : null
@@ -189,8 +206,8 @@ export function Canvas({
 
   const positioned = blocks.map((b) => (dragPos?.id === b.id ? { ...b, x: dragPos.x, y: dragPos.y } : b))
   const byId = new Map(positioned.map((b) => [b.id, b]))
-  const rightPort = (b: Block) => ({ x: b.x + BLOCK_WIDTH, y: b.y + PORT_Y })
-  const leftPort = (b: Block) => ({ x: b.x, y: b.y + PORT_Y })
+  const rightPort = (b: CanvasBlock) => ({ x: b.x + BLOCK_WIDTH, y: b.y + PORT_Y })
+  const leftPort = (b: CanvasBlock) => ({ x: b.x, y: b.y + PORT_Y })
 
   return (
     <section
@@ -217,8 +234,8 @@ export function Canvas({
       >
         <svg className="absolute top-0 left-0 overflow-visible" width="1" height="1" aria-label="Connections">
           {connections.map((c) => {
-            const source = byId.get(c.sourceId)
-            const target = byId.get(c.targetId)
+            const source = byId.get(c.from)
+            const target = byId.get(c.to)
             if (!source || !target) return null
             const d = connectorPath(rightPort(source), leftPort(target))
             const selected = selection?.type === 'connection' && selection.id === c.id
@@ -263,7 +280,7 @@ export function Canvas({
               kind={b.kind}
               title={b.title}
               actor={b.actor}
-              hotspots={b.hotspots.length}
+              hotspots={b.hotspots}
               selected={selection?.type === 'block' && selection.id === b.id}
               onConnectStart={(e) => {
                 if (e.button !== 0) return

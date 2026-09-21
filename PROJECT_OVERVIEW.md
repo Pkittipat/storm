@@ -36,6 +36,6 @@ Modeling the process and generating the domain code would become the same act �
 
 - **Sidebar** lists Processes, one row per process the user is modeling.
 - **Canvas** fills the rest of the window — the main work surface, kept as large as possible for interacting with the process model.
-- **Block** is the unit of the canvas: draggable and connectable, one per command, aggregate, event, policy, read model, or system.
+- **Block** is the unit of the canvas: draggable and connectable, one per command, aggregate, event, policy, or read model.
 - **Actor** (e.g. Customer) is never its own block — it's an attribute on the block it applies to.
 - **Hotspot** is never its own block either — it's an attribute on the block it applies to.

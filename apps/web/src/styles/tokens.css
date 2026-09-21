@@ -177,7 +177,7 @@
    * The core semantic system: every canvas block is one of six domain
    * concepts, each with its own hue. Three tokens per type:
    *   <type>          — the small color-coded swatch/dot (menus, tags,
-   *                      the "Flow" list in the inspector)
+   *                      the "Connections" list in the inspector)
    *   <type>-surface   — the resting card's fill
    *   <type>-line      — the resting card's 1px border
    * A *selected* block does not use <type>-line — it switches to a
@@ -265,7 +265,7 @@
   --text-micro--line-height: 1.4;
 
   /* Usage: secondary meta text and mono readouts — the zoom-percentage
-     value, "handled by"/"emits" meta in the Flow list, code file-path
+     value, "handled by"/"emits" meta in the Connections list, code file-path
      rows, the "Go" language badge is the one exception at text-chip
      size instead (see below). */
   --text-meta: 12px;
@@ -273,14 +273,14 @@
 
   /* Usage: UI chrome section labels and toolbar buttons — "Share" /
      "Generate code", inspector group labels (Actor, Fields,
-     Hotspots, Flow, Generated files), the sidebar's "Projects"
+     Hotspots, Fields, Connections), the sidebar's "Projects"
      heading and search field, and Menu item labels. */
   --text-label: 13px;
   --text-label--line-height: 1.4;
 
   /* Usage: the default size for interactive/body text — sidebar nav
      items, dropdown menu items, inspector tabs, hotspot description
-     text, Flow list item text. This is the most-used size. */
+     text, Connections list item text. This is the most-used size. */
   --text-body: 14px;
   --text-body--line-height: 1.4;
 
@@ -370,7 +370,7 @@
   --spacing-step-md: 10px;
 
   /* Usage: NavItem/Header's leading-icon gap, a BlockCard's own
-     padding, Sidebar/Panel's outer padding, and the Flow list row's
+     padding, Sidebar/Panel's outer padding, and the Connections list row's
      icon gap. */
   --spacing-step-lg: 12px;
 
@@ -447,7 +447,7 @@
      eyebrow labels). */
   --spacing-indicator-xs: 6px;
 
-  /* Usage: TypeSwatch `sm` (the inspector's Flow list rows). */
+  /* Usage: TypeSwatch `sm` (the inspector's Connections list rows). */
   --spacing-indicator-sm: 7px;
 
   /* Usage: TypeSwatch `md` (Add-block menu items). */

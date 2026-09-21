@@ -2,7 +2,7 @@ import { blockKindClasses, type BlockKind } from './types'
 
 const sizeClasses = {
   xs: 'h-indicator-xs w-indicator-xs', // 6px — block-card eyebrow label
-  sm: 'h-indicator-sm w-indicator-sm', // 7px — inspector "Flow" list rows
+  sm: 'h-indicator-sm w-indicator-sm', // 7px — inspector "Connections" list rows
   md: 'h-indicator-md w-indicator-md', // 8px — "Add block" menu items
 } as const
 
@@ -13,7 +13,7 @@ interface TypeSwatchProps {
 
 /**
  * The small square color-swatch that identifies a block's domain type.
- * Usage: block-card eyebrow labels (`xs`), the inspector's Flow list (`sm`),
+ * Usage: block-card eyebrow labels (`xs`), the inspector's Connections list (`sm`),
  * and Add-block menu items (`md`). Always `rounded-xs` — never a circle
  * (circles are reserved for status/connector dots, see the Dot pattern
  * inlined in BlockCard/NavItem).

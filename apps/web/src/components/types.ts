@@ -1,5 +1,6 @@
-/** The six event-storming domain concepts every canvas block belongs to. */
-export type BlockKind = 'readmodel' | 'command' | 'aggregate' | 'event' | 'policy' | 'system'
+/** The five event-storming concepts a block can be — the `kind` values of the process YAML (docs/process-yaml-v1.md). */
+export type { BlockKind } from '@stormm/process-model'
+import type { BlockKind } from '@stormm/process-model'
 
 export const blockKindLabel: Record<BlockKind, string> = {
   readmodel: 'Read model',
@@ -7,7 +8,6 @@ export const blockKindLabel: Record<BlockKind, string> = {
   aggregate: 'Aggregate',
   event: 'Event',
   policy: 'Policy',
-  system: 'System',
 }
 
 /**
@@ -16,7 +16,7 @@ export const blockKindLabel: Record<BlockKind, string> = {
  * `text` is for the inspector eyebrow label. Only Command's `text` value
  * is directly observed in the source (`--color-accent-text`, a darkened
  * tint chosen for legibility on white — the raw accent is a lighter
- * blue that needs it); the other five use their own accent color
+ * blue that needs it); the other four use their own accent color
  * directly, which is dark/saturated enough to stay legible without a
  * dedicated tint.
  */
@@ -26,5 +26,4 @@ export const blockKindClasses: Record<BlockKind, { swatch: string; surface: stri
   aggregate: { swatch: 'bg-aggregate', surface: 'bg-aggregate-surface', line: 'border-aggregate-line', text: 'text-aggregate' },
   event: { swatch: 'bg-event', surface: 'bg-event-surface', line: 'border-event-line', text: 'text-event' },
   policy: { swatch: 'bg-policy', surface: 'bg-policy-surface', line: 'border-policy-line', text: 'text-policy' },
-  system: { swatch: 'bg-system', surface: 'bg-system-surface', line: 'border-system-line', text: 'text-system' },
 }

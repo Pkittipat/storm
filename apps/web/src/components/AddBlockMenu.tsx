@@ -1,7 +1,8 @@
 import { TypeSwatch } from './TypeSwatch'
+import { BLOCK_KINDS } from '@stormm/process-model'
 import { blockKindLabel, type BlockKind } from './types'
 
-const kinds: BlockKind[] = ['readmodel', 'command', 'aggregate', 'event', 'policy', 'system']
+const kinds: readonly BlockKind[] = BLOCK_KINDS
 
 interface AddBlockMenuProps {
   onSelect: (kind: BlockKind) => void

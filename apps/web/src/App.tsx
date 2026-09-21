@@ -1,24 +1,39 @@
-import { useCallback, useEffect, useState } from 'react'
-import { api, type Block, type BlockPatch, type Process, type ProcessSummary, type Project } from './api'
-import { Canvas, type Selection, type Viewport } from './canvas/Canvas'
+import {
+  addBlock as addBlockTo,
+  connect as connectBlocks,
+  disconnect,
+  findBlock,
+  layoutBoard,
+  removeBlock,
+  renameBoard,
+  retitleNewBlock,
+  toYaml,
+  updateBlock,
+  validate,
+  type BlockPatch,
+  type Board,
+} from '@stormm/process-model'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { api, type ProcessSummary, type Project } from './api'
+import { Canvas, type CanvasBlock, type CanvasConnection, type Selection, type Viewport } from './canvas/Canvas'
 import { BLOCK_HEIGHT, BLOCK_WIDTH } from './canvas/geometry'
 import { Inspector } from './canvas/Inspector'
-import { generateProcess, goIdent } from './codegen'
-import {
-  Button,
-  Composer,
-  EditableText,
-  Header,
-  IconButton,
-  Sidebar,
-  blockKindLabel,
-  type BlockKind,
-} from './components'
+import { YamlPanel } from './canvas/YamlPanel'
+import { Button, Composer, EditableText, Header, IconButton, Sidebar, blockKindLabel, type BlockKind } from './components'
 import { ProcessNav } from './ProcessNav'
+import { useDraggedPositions } from './useDraggedPositions'
+import { useProcess, type SaveState } from './useProcess'
 
-const INITIAL_VIEWPORT: Viewport = { x: 40, y: 80, zoom: 1 }
-const STEP_X = 180
-const STEP_Y = 160
+const INITIAL_VIEWPORT: Viewport = { x: 64, y: 88, zoom: 1 }
+
+/** Derived-layout spacing, in world pixels: columns follow the connections, one band of rows per connected group. */
+const LAYOUT = {
+  columnWidth: BLOCK_WIDTH + 64,
+  rowHeight: BLOCK_HEIGHT + 28,
+  groupGap: 48,
+  originX: 0,
+  originY: 0,
+}
 
 const SIDEBAR_KEY = 'stormm.sidebarHidden'
 const readSidebarHidden = () => {
@@ -31,18 +46,36 @@ const readSidebarHidden = () => {
 
 const processIdFromHash = () => window.location.hash.match(/^#\/p\/([^/]+)/)?.[1] ?? null
 
+const SAVE_LABEL: Record<SaveState, string> = {
+  saved: 'Saved',
+  saving: 'Saving…',
+  failed: 'Not saved',
+  conflict: 'Changed elsewhere',
+}
+
 function App() {
   const [processes, setProcesses] = useState<ProcessSummary[] | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [sidebarHidden, setSidebarHidden] = useState(readSidebarHidden)
   const [processId, setProcessId] = useState(processIdFromHash)
-  const [process, setProcess] = useState<Process | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
+  const [yamlOpen, setYamlOpen] = useState(false)
   const [viewport, setViewport] = useState(INITIAL_VIEWPORT)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [renaming, setRenaming] = useState(false)
+  /**
+   * Blocks added in this session. Their ids still follow their titles; once the page is
+   * reloaded they are part of the agreed file and their ids are frozen.
+   */
+  const fresh = useRef({ processId, blocks: new Set<string>() })
+  const freshIds = () => {
+    if (fresh.current.processId !== processId) fresh.current = { processId, blocks: new Set() }
+    return fresh.current.blocks
+  }
 
   const fail = useCallback((e: unknown) => setNotice({ text: e instanceof Error ? e.message : String(e), error: true }), [])
+  const { open, loadError, saveState, edit, reload, setProjectId } = useProcess(processId, fail)
+  const board: Board | null = open?.id === processId ? open.board : null
 
   useEffect(() => {
     const onHash = () => setProcessId(processIdFromHash())
@@ -69,39 +102,13 @@ function App() {
     if (!processId && processes?.length) window.location.hash = `#/p/${processes[0].id}`
   }, [processId, processes])
 
-  const reload = useCallback(() => {
-    if (!processId) return
-    api.getProcess(processId).then(
-      (p) => setProcess((cur) => (cur === null || cur.id === p.id ? p : cur)),
-      fail,
-    )
-  }, [processId, fail])
-
-  // Switching process starts from a clean view (and never shows the previous process while loading).
+  // Switching process starts from a clean view.
   const [viewFor, setViewFor] = useState(processId)
   if (viewFor !== processId) {
     setViewFor(processId)
-    setProcess(null)
     setSelection(null)
     setViewport(INITIAL_VIEWPORT)
   }
-
-  useEffect(() => {
-    if (!processId) return
-    let stale = false
-    api.getProcess(processId).then(
-      (p) => !stale && setProcess(p),
-      (e) => {
-        if (stale) return
-        fail(e)
-        // A dead link falls back to the first process.
-        window.location.hash = ''
-      },
-    )
-    return () => {
-      stale = true
-    }
-  }, [processId, fail])
 
   useEffect(() => {
     if (!notice) return
@@ -109,102 +116,107 @@ function App() {
     return () => clearTimeout(t)
   }, [notice])
 
-  /** Apply a change locally now, persist it, and resync from the server if persisting fails. */
-  const optimistic = useCallback(
-    (update: (p: Process) => Process, persist: () => Promise<unknown>) => {
-      setProcess((p) => (p ? update(p) : p))
-      persist().catch((e) => {
-        fail(e)
-        reload()
-      })
-    },
-    [fail, reload],
+  // ── Derived view ─────────────────────────────────────────────────────────
+
+  const layout = useMemo(() => (board ? layoutBoard(board, LAYOUT) : null), [board])
+  const ids = useMemo(() => (board ? board.blocks.map((b) => b.id) : null), [board])
+  const dragged = useDraggedPositions(processId, ids)
+  const issues = useMemo(() => (board ? validate(board) : []), [board])
+  const yaml = useMemo(() => (board ? toYaml(board) : ''), [board])
+
+  const canvasBlocks: CanvasBlock[] = useMemo(() => {
+    if (!board || !layout) return []
+    return board.blocks.map((b) => ({
+      id: b.id,
+      kind: b.kind,
+      title: b.title,
+      actor: b.actor,
+      hotspots: b.hotspots.length,
+      ...(dragged.positions[b.id] ?? layout.positions.get(b.id) ?? { x: 0, y: 0 }),
+    }))
+  }, [board, layout, dragged.positions])
+
+  const canvasConnections: CanvasConnection[] = useMemo(
+    () => (board ? board.connections.map((c) => ({ id: `${c.from}->${c.to}`, from: c.from, to: c.to })) : []),
+    [board],
   )
 
-  const patchBlock = (id: string, patch: BlockPatch) =>
-    optimistic(
-      (p) => ({
-        ...p,
-        blocks: p.blocks.map((b) =>
-          b.id === id ? { ...b, ...patch, actor: patch.actor === undefined ? b.actor : patch.actor || null } : b,
-        ),
-      }),
-      () => api.updateBlock(id, patch),
-    )
+  const selectedBlock = board && selection?.type === 'block' ? findBlock(board, selection.id) : undefined
+
+  // ── Edits ────────────────────────────────────────────────────────────────
+
+  const patchBlock = (id: string, patch: BlockPatch) => {
+    let target = id
+    if (patch.title !== undefined && freshIds().has(id)) {
+      const title = patch.title
+      edit((b) => {
+        const r = retitleNewBlock(b, id, title)
+        target = r.blockId
+        return r.board
+      })
+      if (target !== id) {
+        freshIds().delete(id)
+        freshIds().add(target)
+        dragged.rename(id, target)
+        setSelection((s) => (s?.type === 'block' && s.id === id ? { type: 'block', id: target } : s))
+      }
+      const { title: _, ...rest } = patch
+      patch = rest
+    }
+    if (Object.keys(patch).length) edit((b) => updateBlock(b, target, patch))
+  }
 
   const deleteBlock = (id: string) => {
     setSelection(null)
-    optimistic(
-      (p) => ({
-        ...p,
-        blocks: p.blocks.filter((b) => b.id !== id),
-        connections: p.connections.filter((c) => c.sourceId !== id && c.targetId !== id),
-      }),
-      () => api.deleteBlock(id),
-    )
+    edit((b) => removeBlock(b, id))
   }
 
-  const deleteConnection = (id: string) => {
+  const deleteConnection = (key: string) => {
     setSelection(null)
-    optimistic((p) => ({ ...p, connections: p.connections.filter((c) => c.id !== id) }), () => api.deleteConnection(id))
+    const [from, to] = key.split('->')
+    edit((b) => disconnect(b, from, to))
   }
 
-  const connect = async (sourceId: string, targetId: string) => {
-    if (!process) return
-    if (process.connections.some((c) => c.sourceId === sourceId && c.targetId === targetId)) return
-    try {
-      const connection = await api.createConnection(process.id, sourceId, targetId)
-      setProcess((p) => (p ? { ...p, connections: [...p.connections, connection] } : p))
-    } catch (e) {
-      fail(e)
-    }
+  const connect = (from: string, to: string) => edit((b) => connectBlocks(b, from, to))
+
+  /** New blocks continue the process: connected from the selected block. */
+  const addBlock = (kind: BlockKind) => {
+    if (!board) return
+    const from = selectedBlock?.id
+    let created = ''
+    edit((b) => {
+      const r = addBlockTo(b, { kind, title: `New ${blockKindLabel[kind].toLowerCase()}` })
+      created = r.blockId
+      return from ? connectBlocks(r.board, from, r.blockId) : r.board
+    })
+    if (!created) return
+    freshIds().add(created)
+    setSelection({ type: 'block', id: created })
   }
 
-  /**
-   * New blocks continue the flow: placed one step right of the selected
-   * block (and connected from it), else right of the rightmost block,
-   * nudged down until the spot is free.
-   */
-  const addBlock = async (kind: BlockKind) => {
-    if (!process) return
-    const selected = selection?.type === 'block' ? process.blocks.find((b) => b.id === selection.id) : undefined
-    const anchor = selected ?? [...process.blocks].sort((a, b) => b.x - a.x)[0]
-    let x = anchor ? anchor.x + STEP_X : 80
-    let y = anchor ? anchor.y : 200
-    const occupied = (bx: number, by: number) =>
-      process.blocks.some((b) => Math.abs(b.x - bx) < BLOCK_WIDTH && Math.abs(b.y - by) < BLOCK_HEIGHT)
-    while (occupied(x, y)) y += STEP_Y
-    try {
-      const block = await api.createBlock(process.id, { kind, title: `New ${blockKindLabel[kind].toLowerCase()}`, x, y })
-      setProcess((p) => (p ? { ...p, blocks: [...p.blocks, block] } : p))
-      setSelection({ type: 'block', id: block.id })
-      if (selected) await connect(selected.id, block.id)
-    } catch (e) {
-      fail(e)
-    }
-  }
+  // ── Processes and projects ───────────────────────────────────────────────
 
   const createProcess = async (projectId: string | null = null) => {
     try {
       const created = await api.createProcess('Untitled process', projectId)
-      setProcesses((ps) => [...(ps ?? []), created])
+      setProcesses((ps) => [...(ps ?? []), { id: created.board.id, name: created.board.name, projectId: created.projectId }])
       setRenaming(true)
-      window.location.hash = `#/p/${created.id}`
+      window.location.hash = `#/p/${created.board.id}`
     } catch (e) {
       fail(e)
     }
   }
 
   const renameProcess = (name: string) => {
-    if (!process) return
+    if (!board) return
     setRenaming(false)
-    setProcesses((ps) => ps?.map((p) => (p.id === process.id ? { ...p, name } : p)) ?? ps)
-    optimistic((p) => ({ ...p, name }), () => api.renameProcess(process.id, name))
+    setProcesses((ps) => ps?.map((p) => (p.id === board.id ? { ...p, name } : p)) ?? ps)
+    edit((b) => renameBoard(b, name))
   }
 
   const moveProcess = (id: string, projectId: string | null) => {
     setProcesses((ps) => ps?.map((p) => (p.id === id ? { ...p, projectId } : p)) ?? ps)
-    setProcess((p) => (p?.id === id ? { ...p, projectId } : p))
+    if (id === processId) setProjectId(projectId)
     api.moveProcess(id, projectId).catch((e) => {
       fail(e)
       api.listProcesses().then(setProcesses, fail)
@@ -236,17 +248,17 @@ function App() {
       await api.deleteProject(project.id)
       setProjects((ps) => ps.filter((p) => p.id !== project.id))
       setProcesses((ps) => ps?.map((p) => (p.projectId === project.id ? { ...p, projectId: null } : p)) ?? ps)
-      setProcess((p) => (p?.projectId === project.id ? { ...p, projectId: null } : p))
+      if (open?.projectId === project.id) setProjectId(null)
     } catch (e) {
       fail(e)
     }
   }
 
   const deleteProcess = async () => {
-    if (!process || !window.confirm(`Delete “${process.name}” and all its blocks?`)) return
+    if (!board || !window.confirm(`Delete “${board.name}” and its YAML file?`)) return
     try {
-      await api.deleteProcess(process.id)
-      const rest = (processes ?? []).filter((p) => p.id !== process.id)
+      await api.deleteProcess(board.id)
+      const rest = (processes ?? []).filter((p) => p.id !== board.id)
       setProcesses(rest)
       window.location.hash = rest.length ? `#/p/${rest[0].id}` : ''
     } catch (e) {
@@ -254,13 +266,15 @@ function App() {
     }
   }
 
-  const downloadCode = () => {
-    if (!process) return
-    const url = URL.createObjectURL(new Blob([generateProcess(process)], { type: 'text/x-go' }))
-    const a = Object.assign(document.createElement('a'), { href: url, download: `${goIdent(process.name).toLowerCase()}.go` })
+  const downloadYaml = () => {
+    if (!board) return
+    const url = URL.createObjectURL(new Blob([yaml], { type: 'application/yaml' }))
+    const a = Object.assign(document.createElement('a'), { href: url, download: `${board.id}.yaml` })
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  const copyYaml = () => navigator.clipboard.writeText(yaml).then(() => setNotice({ text: 'YAML copied' }), fail)
 
   const share = () =>
     navigator.clipboard.writeText(window.location.href).then(() => setNotice({ text: 'Link copied' }), fail)
@@ -269,7 +283,7 @@ function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
-      if (el.closest('input, textarea, [contenteditable="true"]')) return
+      if (el.closest('input, textarea, select, [contenteditable="true"]')) return
       if (e.key === 'Escape') setSelection(null)
       if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
         e.preventDefault()
@@ -281,8 +295,8 @@ function App() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const selectedBlock: Block | undefined =
-    selection?.type === 'block' ? process?.blocks.find((b) => b.id === selection.id) : undefined
+  const errorCount = issues.filter((i) => i.level === 'error').length
+  const hasDrags = Object.keys(dragged.positions).length > 0
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -290,7 +304,7 @@ function App() {
         <Sidebar userInitial="F" userName="Fang" onCollapse={() => toggleSidebar(true)}>
           <ProcessNav
             // The open process's name is live (edited in the header) before the list is refetched.
-            processes={processes?.map((p) => (p.id === process?.id ? { ...p, name: process.name } : p)) ?? null}
+            processes={processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null}
             projects={projects}
             activeId={processId}
             onNewProcess={createProcess}
@@ -310,11 +324,11 @@ function App() {
             )
           }
           title={
-            process ? (
+            board ? (
               <EditableText
-                key={process.id}
+                key={board.id}
                 aria-label="Process name"
-                value={process.name}
+                value={board.name}
                 required
                 autoFocus={renaming}
                 onCommit={renameProcess}
@@ -326,12 +340,21 @@ function App() {
             )
           }
           actions={
-            process && (
+            board && (
               <>
-                {notice && (
+                {notice ? (
                   <span role="status" className={`mr-step-sm text-meta ${notice.error ? 'text-hotspot-text' : 'text-text-muted'}`}>
                     {notice.text}
                   </span>
+                ) : (
+                  <span role="status" className={`mr-step-sm text-meta ${saveState === 'saved' || saveState === 'saving' ? 'text-text-muted' : 'text-hotspot-text'}`}>
+                    {SAVE_LABEL[saveState]}
+                  </span>
+                )}
+                {saveState === 'conflict' && (
+                  <Button variant="secondary" onClick={reload}>
+                    Reload
+                  </Button>
                 )}
                 <Button variant="secondary" onClick={deleteProcess}>
                   Delete
@@ -339,8 +362,9 @@ function App() {
                 <Button variant="secondary" onClick={share}>
                   Share
                 </Button>
-                <Button variant="primary" onClick={downloadCode} disabled={!process.blocks.length}>
-                  Generate code
+                <Button variant="primary" aria-pressed={yamlOpen} onClick={() => setYamlOpen((o) => !o)}>
+                  YAML
+                  {errorCount > 0 && <span className="rounded-full bg-hotspot-surface px-1.5 text-chip text-hotspot-text">{errorCount}</span>}
                 </Button>
               </>
             )
@@ -348,24 +372,27 @@ function App() {
         />
 
         <div className="flex min-h-0 flex-grow">
-          {process ? (
+          {board && layout ? (
             <Canvas
-              blocks={process.blocks}
-              connections={process.connections}
+              blocks={canvasBlocks}
+              connections={canvasConnections}
               selection={selection}
               viewport={viewport}
               onViewportChange={setViewport}
               onSelect={setSelection}
-              onMoveBlock={(id, x, y) => patchBlock(id, { x, y })}
+              onMoveBlock={(id, x, y) => dragged.move(id, { x, y })}
               onConnect={connect}
             >
-              {process.blocks.length === 0 && (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-body text-text-muted">
-                  Add the first block with + below
+              {hasDrags && (
+                <div className="absolute top-step-2xl right-step-2xl">
+                  <Button variant="secondary" onClick={dragged.reset}>
+                    Reset layout
+                  </Button>
                 </div>
               )}
-              <div className="absolute right-0 bottom-step-3xl left-0 flex justify-center px-step-3xl">
-                <div className="w-full max-w-2xl">
+              {/* The strip spans the canvas width; only the composer itself takes clicks. */}
+              <div className="pointer-events-none absolute right-0 bottom-step-3xl left-0 flex justify-center px-step-3xl">
+                <div className="pointer-events-auto w-full max-w-2xl">
                   <Composer
                     placeholder="Add a block with +, drag the right port to connect"
                     onAddBlock={addBlock}
@@ -375,8 +402,25 @@ function App() {
             </Canvas>
           ) : (
             <section aria-label="Process canvas" className="flex flex-grow flex-col items-center justify-center gap-step-lg bg-surface text-body text-text-muted">
-              {notice?.error ? <span className="text-hotspot-text">{notice.text}</span> : null}
-              {processes === null || processes.length > 0 ? 'Loading…' : 'No processes yet.'}
+              {loadError?.body?.issues ? (
+                <div className="max-w-xl">
+                  <div className="mb-step-md text-hotspot-text">{loadError.message}</div>
+                  <ul className="m-0 flex flex-col gap-step-xs pl-step-xl text-meta">
+                    {loadError.body.issues.map((i, n) => (
+                      <li key={n}>
+                        {i.path && <code className="font-mono">{i.path}: </code>}
+                        {i.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : loadError ? (
+                <span className="text-hotspot-text">{loadError.message}</span>
+              ) : processes === null || processes.length > 0 ? (
+                'Loading…'
+              ) : (
+                'No processes yet.'
+              )}
               {processes?.length === 0 && (
                 <Button variant="primary" onClick={() => createProcess()}>
                   New process
@@ -385,16 +429,28 @@ function App() {
             </section>
           )}
 
-          {process && selectedBlock && (
-            <Inspector
-              key={selectedBlock.id}
-              block={selectedBlock}
-              process={process}
-              onChange={(patch) => patchBlock(selectedBlock.id, patch)}
-              onDelete={() => deleteBlock(selectedBlock.id)}
-              onSelectBlock={(id) => setSelection({ type: 'block', id })}
-              onClose={() => setSelection(null)}
+          {board && yamlOpen ? (
+            <YamlPanel
+              path={`stormm/processes/${board.id}.yaml`}
+              yaml={yaml}
+              issues={issues}
+              onCopy={copyYaml}
+              onDownload={downloadYaml}
+              onClose={() => setYamlOpen(false)}
             />
+          ) : (
+            board &&
+            selectedBlock && (
+              <Inspector
+                key={selectedBlock.id}
+                block={selectedBlock}
+                board={board}
+                onChange={(patch) => patchBlock(selectedBlock.id, patch)}
+                onDelete={() => deleteBlock(selectedBlock.id)}
+                onSelectBlock={(id) => setSelection({ type: 'block', id })}
+                onClose={() => setSelection(null)}
+              />
+            )
           )}
         </div>
       </main>
