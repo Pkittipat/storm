@@ -107,7 +107,8 @@
   --color-port: #a9a6a0;
 
   /* Usage: stroke for the connector lines/edges drawn between blocks on
-     the process canvas. */
+     the process canvas. Wires are plain 1.5px round-capped curves
+     port-to-port — no arrowhead; the ports already show direction. */
   --color-connector: #9c9993;
 
   /* Usage: the dot-grid background pattern painted on the canvas

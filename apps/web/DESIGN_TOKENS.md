@@ -39,7 +39,7 @@ rule this out.
 | `border-border-elevated` | `#E3E1DB` | Floating/shadowed surfaces (composer, dropdown menus) |
 | `border-border-dot` | `#A3A09A` | Inactive small indicator dot ring |
 | `border-port` | `#A9A6A0` | Default (unselected) canvas block connector-port ring |
-| `text-connector` / stroke | `#9C9993` | Canvas connector lines between blocks |
+| `text-connector` / stroke | `#9C9993` | Canvas connector lines between blocks (1.5px, round cap, no arrowhead) |
 | canvas bg pattern | `#DAD7D0` | Dot-grid background on the canvas |
 
 ## Text

@@ -175,13 +175,6 @@ export function Canvas({
         style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }}
       >
         <svg className="absolute top-0 left-0 overflow-visible" width="1" height="1" aria-label="Connections">
-          <defs>
-            {(['connector', 'accent'] as const).map((c) => (
-              <marker key={c} id={`arrow-${c}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill={`var(--color-${c})`} />
-              </marker>
-            ))}
-          </defs>
           {connections.map((c) => {
             const source = byId.get(c.sourceId)
             const target = byId.get(c.targetId)
@@ -190,7 +183,7 @@ export function Canvas({
             const selected = selection?.type === 'connection' && selection.id === c.id
             return (
               <g key={c.id}>
-                <path d={d} fill="none" stroke={selected ? 'var(--color-accent)' : 'var(--color-connector)'} strokeWidth={1.5} markerEnd={`url(#arrow-${selected ? 'accent' : 'connector'})`} />
+                <path d={d} fill="none" stroke={selected ? 'var(--color-accent)' : 'var(--color-connector)'} strokeWidth={1.5} strokeLinecap="round" />
                 {/* Wide invisible twin so the 1.5px line is clickable. */}
                 <path
                   d={d}

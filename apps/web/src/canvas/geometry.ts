@@ -13,8 +13,12 @@ export interface Point {
   y: number
 }
 
-/** A left-to-right cubic curve from a right port to a left port. */
+/**
+ * A left-to-right cubic curve from a right port to a left port. The handles
+ * reach half the horizontal gap, which gives a soft, even S; a larger fixed
+ * bend makes short gaps with a big vertical drop hook sharply.
+ */
 export function connectorPath(from: Point, to: Point): string {
-  const bend = Math.max(40, Math.abs(to.x - from.x) / 2)
+  const bend = Math.max(24, Math.abs(to.x - from.x) / 2)
   return `M ${from.x} ${from.y} C ${from.x + bend} ${from.y}, ${to.x - bend} ${to.y}, ${to.x} ${to.y}`
 }
