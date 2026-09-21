@@ -1,0 +1,499 @@
+/**
+ * Stormm design tokens
+ * ====================
+ * Extracted from the "Stormm — Process canvas" Claude artifact
+ * (claude.ai/artifact/WuG8QYfHrjTdr2NibALUfz): a dense, warm-neutral
+ * event-storming / domain-modeling canvas UI.
+ *
+ * This file is the single source of truth for color, type, spacing,
+ * radius and shadow. Every token below carries a one-line "Usage:" note
+ * — read it before reaching for a raw hex value or an arbitrary
+ * Tailwind value. Tailwind v4 turns each `--color-*`/`--text-*`/
+ * `--spacing-*`/`--radius-*`/`--shadow-*` key into a matching utility
+ * class automatically, e.g. `--color-surface-sunken` →
+ * `bg-surface-sunken` / `text-surface-sunken` / `border-surface-sunken`;
+ * `--spacing-control-md` → `h-control-md` / `w-control-md` /
+ * `gap-control-md` / `p-control-md` (every width/height/padding/margin/
+ * gap utility shares one spacing namespace in Tailwind — the usage note
+ * says which utility a given token is actually meant for).
+ *
+ * Every raw measurement in the source is a multiple of Tailwind's
+ * default 4px spacing unit, so `--spacing-*` here doesn't change what
+ * renders — `gap-step-sm` and `gap-2` compute to the identical 8px.
+ * These names exist purely for discoverability and consistency with
+ * the rest of this file: components in this repo use the named form,
+ * never a raw Tailwind number, so a reader never has to reverse-
+ * engineer "12px = 3" from memory. IMPORTANT: never add a bare
+ * `--spacing-xs`/`sm`/`md`/`lg`/`xl`/`2xl`/`3xl` (no prefix) — those
+ * names collide with Tailwind's own `w-*`/`h-*`/`max-w-*`/`min-w-*`
+ * sizing scale (see the SPACING — INSET & GAP SCALE note below for
+ * what that breaks). Always prefix a new spacing key. Most
+ * border-radius values also match Tailwind's default scale
+ * (`rounded-xs`=2px, `rounded-md`=6px,
+ * `rounded-lg`=8px, `rounded-xl`=12px, `rounded-2xl`=16px,
+ * `rounded-full`=circular) — only 3 in-between radii needed custom
+ * tokens, see RADIUS below. Font-weight also uses Tailwind's stock
+ * `font-normal`/`font-medium`/`font-semibold` (400/500/600) unchanged.
+ */
+
+@theme {
+  /* ============================================================
+   * COLOR — SURFACE (3-tier elevation)
+   * ============================================================
+   * Three flat, warm-neutral tones stand in for shadows/elevation.
+   * Picking the right tier is the #1 way to keep this UI coherent.
+   */
+
+  /* Usage: the base app/page background, the canvas background, and
+     recessed content (generated-code <pre> blocks). This is the
+     "resting" tone — most of the screen is this color. */
+  --color-surface: #fbfaf8;
+
+  /* Usage: chrome regions that sit visually *below* the canvas: the
+     left nav sidebar and a *docked* inspector panel. Never use this
+     for floating/overlaid elements — see surface-raised. */
+  --color-surface-sunken: #f4f3ef;
+
+  /* Usage: elevated surfaces that float *above* the canvas and need to
+     visually pop: buttons with a border (e.g. "Share"), the zoom
+     stepper, the composer bar, dropdown/context menus, and the
+     *undocked* floating variant of the inspector panel. Pair with a
+     border-elevated or border-input border and, for anything that
+     truly floats (menus, composer, floating panel), a shadow-float-*
+     token. */
+  --color-surface-raised: #ffffff;
+
+  /* Usage: background for an *active/selected* item living inside
+     surface-sunken chrome — the current sidebar nav link, the active
+     inspector tab. Not for canvas blocks (those use their own
+     <type>-surface token) and not for the accent selection state
+     (that uses --color-accent-subtle). */
+  --color-surface-selected: #eae8e3;
+
+  /* ============================================================
+   * COLOR — BORDER (graduated 1px hairlines)
+   * ============================================================
+   * All 1px unless the component note says otherwise. Four near-
+   * identical warm grays, each tied to a specific context — don't
+   * treat them as interchangeable.
+   */
+
+  /* Usage: default hairline for chrome that sits on surface-sunken:
+     sidebar/inspector outer edge, dividers between stacked sections
+     inside a panel, the zoom stepper's own outline. */
+  --color-border: #e6e4df;
+
+  /* Usage: the single lightest hairline — reserved for the app header's
+     bottom border, which sits directly on --color-surface and needs
+     only a whisper of separation. */
+  --color-border-subtle: #eceae5;
+
+  /* Usage: border for a bordered control resting on --color-surface-
+     raised (e.g. the "Share" secondary button) — one step darker than
+     --color-border so it stays legible against white. */
+  --color-border-input: #e0ded8;
+
+  /* Usage: border for shadowed/floating surfaces — the composer bar and
+     dropdown/context menus. Always pair with a shadow-float-* token. */
+  --color-border-elevated: #e3e1db;
+
+  /* Usage: ring color for inactive/unselected small indicator dots,
+     e.g. the bullet outline next to a non-current sidebar nav link. */
+  --color-border-dot: #a3a09a;
+
+  /* Usage: default (unselected) connector-port ring drawn on the edge
+     of a canvas block/node card. A selected block's ports switch to
+     that block's own accent color instead (see BLOCK TYPES). */
+  --color-port: #a9a6a0;
+
+  /* Usage: stroke for the connector lines/edges drawn between blocks on
+     the process canvas. */
+  --color-connector: #9c9993;
+
+  /* Usage: the dot-grid background pattern painted on the canvas
+     surface (`background-image: radial-gradient(...)`). */
+  --color-canvas-dot: #dad7d0;
+
+  /* ============================================================
+   * COLOR — TEXT
+   * ============================================================
+   */
+
+  /* Usage: primary text and icon color. Also doubles as the *fill* for
+     inverted elements — the user-avatar background and the primary
+     ("Generate code") button background both use this. */
+  --color-text: #1a1a18;
+
+  /* Usage: one step down from primary — for standalone numeric/mono
+     readouts that should read as more prominent than a muted label but
+     not as strong as body text, e.g. the canvas zoom-percentage value.
+     Narrow use; when in doubt use --color-text or --color-text-muted
+     instead. */
+  --color-text-secondary: #3a3935;
+
+  /* Usage: secondary/supporting text and icon color — group labels,
+     icon-button glyphs, helper/meta text ("handled by", "emits"),
+     inactive nav icons. This is the workhorse "muted" tone. */
+  --color-text-muted: #6b6a65;
+
+  /* Usage: input placeholder text ONLY. */
+  --color-text-placeholder: #8a8882;
+
+  /* ============================================================
+   * COLOR — ACCENT (interactive / selection blue)
+   * ============================================================
+   */
+
+  /* Usage: the one interactive accent color in the system — a selected
+     canvas block's border, the Command block-type swatch, focus/
+     selection affordances. Pair with `ring-4 ring-accent/[14%]` to
+     reproduce the selection glow (see the selected Command block in
+     the source, which uses a 1.5px accent border plus that ring). */
+  --color-accent: #2f6feb;
+
+  /* Usage: background tint for a selected/active accent-colored
+     surface (the selected Command block's fill). */
+  --color-accent-subtle: #e8effc;
+
+  /* Usage: text color for the accent-colored eyebrow label inside the
+     inspector header (e.g. the "COMMAND" mono label), sat on a
+     transparent background — NOT for use on --color-accent-subtle. */
+  --color-accent-text: #22509f;
+
+  /* ============================================================
+   * COLOR — BLOCK TYPES (event-storming domain palette)
+   * ============================================================
+   * The core semantic system: every canvas block is one of six domain
+   * concepts, each with its own hue. Three tokens per type:
+   *   <type>          — the small color-coded swatch/dot (menus, tags,
+   *                      the "Flow" list in the inspector)
+   *   <type>-surface   — the resting card's fill
+   *   <type>-line      — the resting card's 1px border
+   * A *selected* block does not use <type>-line — it switches to a
+   * 1.5px --color-accent border regardless of type (only Command is
+   * shown selected in the source, but the pattern is accent-driven,
+   * not type-driven).
+   */
+
+  /* Read model — a query-side view (e.g. "Cart"). */
+  --color-readmodel: #3f8a4b;
+  --color-readmodel-surface: #eaf4ec;
+  --color-readmodel-line: #d2e6d6;
+
+  /* Command — a user/system intent (e.g. "Place Order"). */
+  --color-command: #2f6feb;
+  --color-command-surface: #e8effc;
+  --color-command-line: #cfddf7;
+
+  /* Aggregate — owns state + business rules (e.g. "Order"). */
+  --color-aggregate: #c99a12;
+  --color-aggregate-surface: #fcf3d7;
+  --color-aggregate-line: #efe0ae;
+
+  /* Event — a fact that happened (e.g. "Order Placed"). */
+  --color-event: #e0692e;
+  --color-event-surface: #fcebdf;
+  --color-event-line: #f2d2bc;
+
+  /* Policy — a reactive rule ("whenever X, do Y"). */
+  --color-policy: #7b5cd6;
+  --color-policy-surface: #f0ebfa;
+  --color-policy-line: #ddd3f2;
+
+  /* System — an external system. NOTE: the source only shows this
+     type's swatch (in the "Add block" menu) — no resting card is ever
+     rendered, so -surface/-line are BOTH derived the same way as
+     Command above. Confirm visually before treating as final. */
+  --color-system: #d1467f;
+  --color-system-surface: #faebf1; /* derived, not directly observed */
+  --color-system-line: #f4d5e2; /* derived, not directly observed */
+
+  /* ============================================================
+   * COLOR — TAGS / STATUS CHIPS
+   * ============================================================
+   */
+
+  /* Usage: the actor/"Customer" chip attached to a block header. */
+  --color-actor: #f7d54a;
+  --color-actor-text: #3d3000;
+
+  /* Usage: the hotspot-count chip on a block header (e.g. "1 hotspot"). */
+  --color-hotspot-surface: #fbe3e0;
+  --color-hotspot-text: #a8291f;
+
+  /* Usage: the small warning dot next to a hotspot question in the
+     inspector's Hotspots list. More saturated than hotspot-text —
+     don't substitute one for the other. */
+  --color-hotspot-dot: #c2362b;
+
+  /* ============================================================
+   * TYPOGRAPHY — FONT FAMILY
+   * ============================================================
+   * Overrides Tailwind's default `font-sans`/`font-mono` app-wide —
+   * every default use of those utilities should be Geist in this app.
+   * Load via Google Fonts: Geist (400/500/600), Geist Mono (400/500).
+   */
+  --font-sans:
+    'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+
+  /* ============================================================
+   * TYPOGRAPHY — SIZE
+   * ============================================================
+   * Named by ROLE, not t-shirt size, and deliberately namespaced away
+   * from Tailwind's default text-xs/sm/base/lg/xl scale (which this
+   * design does not follow) so the two scales never get confused.
+   */
+
+  /* Usage: smallest uppercase micro-labels/eyebrows — a sidebar group
+     heading ("No project"), the inspector's mono type-eyebrow
+     ("COMMAND"). Always paired with uppercase + a tracking-* token. */
+  --text-micro: 11px;
+  --text-micro--line-height: 1.4;
+
+  /* Usage: secondary meta text and mono readouts — the zoom-percentage
+     value, "handled by"/"emits" meta in the Flow list, code file-path
+     rows, the "Go" language badge is the one exception at text-chip
+     size instead (see below). */
+  --text-meta: 12px;
+  --text-meta--line-height: 1.5;
+
+  /* Usage: UI chrome section labels and toolbar buttons — "Share" /
+     "Generate code", and inspector group labels (Actor, Fields,
+     Hotspots, Flow, Generated files). */
+  --text-label: 13px;
+  --text-label--line-height: 1.4;
+
+  /* Usage: the default size for interactive/body text — sidebar nav
+     items, dropdown menu items, inspector tabs, hotspot description
+     text, Flow list item text. This is the most-used size. */
+  --text-body: 14px;
+  --text-body--line-height: 1.4;
+
+  /* Usage: emphasized content one step up from body — canvas block/
+     card titles, the page header h1, the composer's input text. */
+  --text-emphasis: 15px;
+  --text-emphasis--line-height: 1.3;
+
+  /* Usage: the largest UI text — the app wordmark and the inspector
+     panel's block-name heading. Pair with tracking-heading. */
+  --text-heading: 16px;
+  --text-heading--line-height: 1.3;
+
+  /* Usage: ONLY for compact pill/tag labels (the Customer actor chip,
+     the hotspot-count chip) — a deliberate half-pixel optical size
+     between micro and meta so tag text neither crowds nor floats
+     inside its 22px-tall pill. Do not use outside tag/chip components. */
+  --text-chip: 11.5px;
+  --text-chip--line-height: 1;
+
+  /* Usage: ONLY for the inspector's mono key/value field rows (e.g.
+     `cartID CartID`) — a half-pixel size between meta and label chosen
+     to fit dense key/type pairs. Do not use outside that field-list
+     component. */
+  --text-mono-field: 12.5px;
+  --text-mono-field--line-height: 1.4;
+
+  /* ============================================================
+   * TYPOGRAPHY — TRACKING (letter-spacing)
+   * ============================================================
+   */
+
+  /* Usage: tight tracking for the largest headings — the app wordmark,
+     the inspector panel block-name heading. Pair with --text-heading. */
+  --tracking-heading: -0.01em;
+
+  /* Usage: wide tracking for uppercase micro-labels in the sans
+     typeface — sidebar group headings like "No project". Pair with
+     --text-micro + uppercase. */
+  --tracking-label: 0.06em;
+
+  /* Usage: wide tracking for uppercase micro-labels set in mono — the
+     inspector's type eyebrow ("COMMAND"). Pair with --text-micro +
+     font-mono + uppercase. Slightly narrower than tracking-label
+     because mono characters are already wider. */
+  --tracking-mono-label: 0.04em;
+
+  /* ============================================================
+   * SPACING — INSET & GAP SCALE
+   * ============================================================
+   * The shared small-spacing rhythm behind padding, margin and gap
+   * across the whole system — one scale drives all three, the same way
+   * Tailwind's own default scale does.
+   *
+   * Named `step-*`, NOT the bare `xs`/`sm`/`md`/`lg`/`xl`/`2xl`/`3xl`
+   * you'd expect: Tailwind's `w-*`/`h-*`/`max-w-*`/`min-w-*` utilities
+   * resolve named (non-numeric) sizes through this same `--spacing-*`
+   * theme namespace. A bare `--spacing-2xl` here would silently
+   * hijack `max-w-2xl` app-wide (this actually happened during
+   * development — the composer bar's `max-w-2xl` collapsed to 16px
+   * because it started resolving against this scale instead of
+   * Tailwind's built-in container size). The `step-` prefix makes
+   * every key here impossible to confuse with a Tailwind builtin.
+   */
+
+  /* Usage: the tightest gap in the system — the Tabs strip and
+     ZoomControl's internal button-to-button gap. */
+  --spacing-step-3xs: 2px;
+
+  /* Usage: tight icon+label gaps (Chip) and list-stacking gaps
+     (Sidebar's nav-item list, a BlockCard's own label+card wrapper,
+     a BlockCard footer's chip row). */
+  --spacing-step-2xs: 4px;
+
+  /* Usage: a BlockCard's internal content gap, and the eyebrow
+     swatch-to-label gap shared by BlockCard and Panel. */
+  --spacing-step-xs: 6px;
+
+  /* Usage: Button's icon+label gap, Composer's internal row gap,
+     Header's action-button gap, and the horizontal inset inside
+     ZoomControl/AddBlockMenu. */
+  --spacing-step-sm: 8px;
+
+  /* Usage: AddBlockMenu's item-to-item gap, Sidebar's wordmark and
+     footer gaps, and the standard horizontal inset for list rows —
+     NavItem, Tabs, FieldRow, AddBlockMenu items. */
+  --spacing-step-md: 10px;
+
+  /* Usage: NavItem/Header's leading-icon gap, a BlockCard's own
+     padding, Sidebar/Panel's outer padding, and the Flow list row's
+     icon gap. */
+  --spacing-step-lg: 12px;
+
+  /* Usage: PanelSection's divider top-margin/top-padding rhythm. */
+  --spacing-step-xl: 14px;
+
+  /* Usage: Header's outer horizontal edge padding, and the floating
+     Panel variant's inset from the viewport edge. */
+  --spacing-step-2xl: 16px;
+
+  /* Usage: Header's default left padding (when no leading icon
+     pushes it in to --spacing-step-lg instead), the composer's inset
+     from the canvas's bottom/side edges. */
+  --spacing-step-3xl: 24px;
+
+  /* Usage: ONLY the top margin above a second+ NavGroupLabel in the
+     sidebar (e.g. above "No project") — sits between step-2xl(16) and
+     step-3xl(24) on the ladder but is a one-off named separately
+     since it's tied to one specific relationship (group-to-group),
+     not a general-purpose step. */
+  --spacing-nav-group-gap: 22px;
+
+  /* ============================================================
+   * SPACING — CONTROL SIZE
+   * ============================================================
+   * Recurring interactive-element heights (and, where noted, widths) —
+   * reach for these before typing a raw height or width number on a
+   * button, row or input.
+   */
+
+  /* Usage: Chip height. */
+  --spacing-control-2xs: 22px;
+
+  /* Usage: ONLY Chip's horizontal padding — a deliberate half-step
+     between step-xs(6) and step-sm(8), mirroring text-chip's own
+     half-pixel font-size treatment for the same compact pill. */
+  --spacing-chip-inset: 7px;
+
+  /* Usage: IconButton `sm`, ZoomControl's +/− buttons, a PanelSection
+     header row. */
+  --spacing-control-xs: 28px;
+
+  /* Usage: Avatar diameter, an AddBlockMenu item row, ZoomControl's
+     button width (its height is control-xs — the source uses a
+     30×28 button, not a square one). */
+  --spacing-control-sm: 30px;
+
+  /* Usage: IconButton `md`, NavItem, Tabs, FieldRow. */
+  --spacing-control-md: 32px;
+
+  /* Usage: Button (toolbar), the ZoomControl shell, Composer's
+     circular send button. */
+  --spacing-control-lg: 36px;
+
+  /* Usage: Composer's add-block button and its text input. */
+  --spacing-control-xl: 40px;
+
+  /* ============================================================
+   * SPACING — INDICATOR SIZE
+   * ============================================================
+   * Small circular/square status marks — dots and type swatches.
+   */
+
+  /* Usage: NavItem's status dot; TypeSwatch `xs` (BlockCard/Panel
+     eyebrow labels). */
+  --spacing-indicator-xs: 6px;
+
+  /* Usage: TypeSwatch `sm` (the inspector's Flow list rows). */
+  --spacing-indicator-sm: 7px;
+
+  /* Usage: TypeSwatch `md` (Add-block menu items). */
+  --spacing-indicator-md: 8px;
+
+  /* Usage: a BlockCard's connector-port dot. */
+  --spacing-indicator-lg: 9px;
+
+  /* Usage: how far a connector-port dot hangs off its BlockCard's
+     edge. Always negative — pair with indicator-lg as
+     `-left-indicator-offset` / `-right-indicator-offset`. */
+  --spacing-indicator-offset: 5px;
+
+  /* ============================================================
+   * SPACING — STRUCTURE
+   * ============================================================
+   * One-off but load-bearing layout constants — named so the app
+   * shell's grid reads as intentional, not incidental.
+   */
+
+  --spacing-header-height: 56px;
+  --spacing-sidebar-width: 256px;
+  --spacing-panel-width: 288px;
+  --spacing-node-width: 140px;
+  --spacing-node-height: 104px;
+  --spacing-menu-width: 184px;
+
+  /* ============================================================
+   * RADIUS
+   * ============================================================
+   * Most radii already match Tailwind's default scale — use those
+   * directly: rounded-xs (2px, color-swatch squares in the "Add
+   * block" menu), rounded-md (6px, small icon-only buttons + tag
+   * chips), rounded-lg (8px, sidebar/menu list items), rounded-xl
+   * (12px, dropdown/context menus), rounded-2xl (16px, the composer
+   * pill), rounded-full (avatars, circular buttons, status/port dots).
+   * Only the three in-between values below needed custom tokens.
+   */
+
+  /* Usage: ONLY the two header toolbar buttons (Share, Generate code). */
+  --radius-toolbar: 9px;
+
+  /* Usage: canvas block/node cards, the composer's "add block" button,
+     and the zoom stepper container — floating/interactive containers
+     that read as slightly rounder than a plain list item. */
+  --radius-node: 10px;
+
+  /* Usage: ONLY the *undocked* floating variant of the inspector panel
+     (shown selecting a block with sidebars hidden). The docked,
+     sidebar-style inspector has square corners — no radius token. */
+  --radius-floating-panel: 14px;
+
+  /* ============================================================
+   * SHADOW
+   * ============================================================
+   * Two elevation levels, both a warm near-black (26,26,24) rather
+   * than pure black, matching --color-text. Tailwind's default
+   * shadow-* scale uses neutral black and does not match this design
+   * — use these instead of shadow-sm/md/lg/xl for anything in this UI.
+   */
+
+  /* Usage: elevation 1 — a surface floating directly on the canvas
+     with nothing above it, e.g. the composer bar. */
+  --shadow-float-sm:
+    0 8px 24px rgba(26, 26, 24, 0.06), 0 1px 2px rgba(26, 26, 24, 0.04);
+
+  /* Usage: elevation 2 — a surface floating above other floating
+     content, e.g. the "Add block" dropdown menu and the undocked
+     floating inspector panel. */
+  --shadow-float-md:
+    0 12px 32px rgba(26, 26, 24, 0.1), 0 1px 3px rgba(26, 26, 24, 0.06);
+}
