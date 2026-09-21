@@ -12,6 +12,12 @@
       "runtimeExecutable": "/Users/oll/.npm-global/bin/pnpm",
       "runtimeArgs": ["--filter", "api", "start:dev"],
       "port": 3000
+    },
+    {
+      "name": "prisma-studio",
+      "runtimeExecutable": "/Users/oll/.npm-global/bin/pnpm",
+      "runtimeArgs": ["--filter", "api", "prisma:studio", "--port", "5555", "--browser", "none"],
+      "port": 5555
     }
   ]
 }
