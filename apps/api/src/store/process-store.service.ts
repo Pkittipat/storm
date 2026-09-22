@@ -10,14 +10,16 @@ import {
   newBoard,
   newId,
   parseBoard,
+  slugify,
   toYaml,
   validate,
   type Board,
   type Issue,
 } from '@stormm/process-model';
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
+import { GithubRepo, MAIN } from './github-repo.service.js';
 
 export interface Project {
   id: string;
@@ -40,24 +42,37 @@ export interface ProcessFile {
   issues: Issue[];
 }
 
+export interface ProcessDiff {
+  hasChanges: boolean;
+  /** Unified diff of the process file, `main` vs. the user's branch; absent when there's nothing to show. */
+  patch?: string;
+  additions?: number;
+  deletions?: number;
+}
+
 /** Repo folder for processes outside any project; not a slug, so no project id can take it. */
 const NO_PROJECT = '_no-project';
 
 /**
- * Stand-in for GitHub until it is connected. Each project is a local "repository"
- * folder holding only Stormm-owned files:
+ * Process files live in the customer's GitHub repo (via the Stormm GitHub App),
+ * one file per process:
  *
- *   <data dir>/projects.json                                  (Stormm's side: project ↔ repo)
- *   <data dir>/repos/<project id>/stormm/processes/<id>.yaml  (the agreed process)
+ *   stormm/processes/<project id>/<id>.yaml
  *
- * The YAML files are the only record of a process. Every write is validated and
- * written in canonical form, and must name the version it was based on.
+ * Only one repo is connected today (`GITHUB_REPO`), so every project's processes
+ * live in that same repo under their own folder — a stand-in for "each project is
+ * its own connected repo" until more than one installation exists.
+ *
+ * The project list itself (`id ↔ name`) is Stormm's own bookkeeping, not customer
+ * repo content, so it's kept locally rather than committed to the customer's repo.
  */
 @Injectable()
 export class ProcessStore {
-  private readonly root = resolve(process.env.STORMM_DATA_DIR ?? '.stormm-data');
+  private readonly localRoot = resolve(process.env.STORMM_DATA_DIR ?? '.stormm-data');
   // Writes run one at a time so read-check-write sequences never interleave.
   private queue: Promise<unknown> = Promise.resolve();
+
+  constructor(private readonly github: GithubRepo) {}
 
   private exclusive<T>(work: () => Promise<T>): Promise<T> {
     const run = this.queue.then(work, work);
@@ -66,14 +81,26 @@ export class ProcessStore {
   }
 
   private processesDir(projectId: string | null) {
-    return join(this.root, 'repos', projectId ?? NO_PROJECT, 'stormm', 'processes');
+    return `stormm/processes/${projectId ?? NO_PROJECT}`;
   }
 
-  // ── Projects ────────────────────────────────────────────────────────────
+  private processPath(projectId: string | null, id: string) {
+    return `${this.processesDir(projectId)}/${id}.yaml`;
+  }
+
+  /**
+   * The branch a user's in-progress edits live on, until they're accepted onto `main`.
+   * There's no real login yet, so `userId` is just whatever the client sends.
+   */
+  private userBranch(userId: string) {
+    return `user/${slugify(userId, 'anon')}`;
+  }
+
+  // ── Projects (Stormm's own bookkeeping — local, not in the customer repo) ─
 
   async listProjects(): Promise<Project[]> {
     try {
-      return JSON.parse(await readFile(join(this.root, 'projects.json'), 'utf8')) as Project[];
+      return JSON.parse(await readFile(join(this.localRoot, 'projects.json'), 'utf8')) as Project[];
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw e;
@@ -81,14 +108,17 @@ export class ProcessStore {
   }
 
   private async saveProjects(projects: Project[]) {
-    await atomicWrite(join(this.root, 'projects.json'), JSON.stringify(projects, null, 2) + '\n');
+    const path = join(this.localRoot, 'projects.json');
+    await mkdir(resolve(path, '..'), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(projects, null, 2) + '\n', 'utf8');
+    await rename(tmp, path);
   }
 
   createProject(name: string): Promise<Project> {
     return this.exclusive(async () => {
       const projects = await this.listProjects();
       const project = { id: newId(name, projects.map((p) => p.id), 'project'), name };
-      await mkdir(this.processesDir(project.id), { recursive: true });
       await this.saveProjects([...projects, project]);
       return project;
     });
@@ -103,27 +133,31 @@ export class ProcessStore {
     });
   }
 
-  /** Its processes are kept and move to "No project". */
+  /** Its processes are kept in the repo and move to "No project". */
   deleteProject(id: string): Promise<void> {
     return this.exclusive(async () => {
       const projects = await this.listProjects();
       if (!projects.some((p) => p.id === id)) throw new NotFoundException(`Project ${id} not found`);
-      await mkdir(this.processesDir(null), { recursive: true });
-      for (const file of await yamlFiles(this.processesDir(id)))
-        await rename(join(this.processesDir(id), file), join(this.processesDir(null), file));
-      await rm(join(this.root, 'repos', id), { recursive: true, force: true });
+      for (const file of await this.github.listFiles(this.processesDir(id))) {
+        const { text } = (await this.github.readFile(`${this.processesDir(id)}/${file.name}`))!;
+        await this.github.writeFile(this.processPath(null, basename(file.name, '.yaml')), text, {
+          message: `Move ${file.name} out of ${id} (project deleted)`,
+        });
+        await this.github.deleteFile(`${this.processesDir(id)}/${file.name}`, file.sha, `Move ${file.name} out of ${id} (project deleted)`);
+      }
       await this.saveProjects(projects.filter((p) => p.id !== id));
     });
   }
 
-  // ── Processes ───────────────────────────────────────────────────────────
+  // ── Processes (real files in the connected GitHub repo) ────────────────────
 
   /** Every process file, as `{ id, projectId, path }`, projects first in project order. */
   private async files(): Promise<{ id: string; projectId: string | null; path: string }[]> {
     const out: { id: string; projectId: string | null; path: string }[] = [];
     for (const projectId of [...(await this.listProjects()).map((p) => p.id), null]) {
       const dir = this.processesDir(projectId);
-      for (const file of await yamlFiles(dir)) out.push({ id: basename(file, '.yaml'), projectId, path: join(dir, file) });
+      for (const file of await this.github.listFiles(dir))
+        if (file.name.endsWith('.yaml')) out.push({ id: basename(file.name, '.yaml'), projectId, path: `${dir}/${file.name}` });
     }
     return out;
   }
@@ -138,18 +172,22 @@ export class ProcessStore {
     const files = await this.files();
     return Promise.all(
       files.map(async ({ id, projectId, path }) => {
-        const { board } = parseBoard(await readFile(path, 'utf8'));
+        const { text } = (await this.github.readFile(path))!;
+        const { board } = parseBoard(text);
         return board ? { id, name: board.name, projectId } : { id, name: id, projectId, broken: true };
       }),
     );
   }
 
-  async getProcess(id: string): Promise<ProcessFile> {
+  /** Reads the user's own in-progress edit if they have one, otherwise the agreed version on `main`. */
+  async getProcess(id: string, userId: string): Promise<ProcessFile> {
     const { projectId, path } = await this.locate(id);
-    const text = await readFile(path, 'utf8');
+    const branch = this.userBranch(userId);
+    const onBranch = await this.github.readFile(path, branch);
+    const { text, sha } = onBranch ?? (await this.github.readFile(path))!;
     const { board, issues } = parseBoard(text);
     if (!board) throw new UnprocessableEntityException({ message: `${id}.yaml can't be read as a process`, issues });
-    return { projectId, board, version: blobSha(text), issues: [...issues, ...validate(board), ...fileNameIssues(id, board)] };
+    return { projectId, board, version: sha, issues: [...issues, ...validate(board), ...fileNameIssues(id, board)] };
   }
 
   createProcess(name: string, projectId: string | null): Promise<ProcessFile> {
@@ -158,9 +196,10 @@ export class ProcessStore {
         throw new BadRequestException(`Project ${projectId} not found`);
       const board = newBoard(name, (await this.files()).map((f) => f.id));
       const text = toYaml(board);
-      await mkdir(this.processesDir(projectId), { recursive: true });
-      await atomicWrite(join(this.processesDir(projectId), `${board.id}.yaml`), text);
-      return { projectId, board, version: blobSha(text), issues: validate(board) };
+      const sha = await this.github.writeFile(this.processPath(projectId, board.id), text, {
+        message: `Create ${board.id}`,
+      });
+      return { projectId, board, version: sha, issues: validate(board) };
     });
   }
 
@@ -169,21 +208,64 @@ export class ProcessStore {
    * keep the same id, and be based on the current version — otherwise nothing is written.
    * The file is stored in canonical form, whatever formatting was sent.
    */
-  saveProcess(id: string, yaml: string, baseVersion: string): Promise<ProcessFile> {
+  saveProcess(id: string, yaml: string, baseVersion: string, userId: string): Promise<ProcessFile> {
     return this.exclusive(async () => {
       const { projectId, path } = await this.locate(id);
-      const current = blobSha(await readFile(path, 'utf8'));
-      if (current !== baseVersion)
-        throw new ConflictException({ message: 'The process changed since you loaded it', version: current });
 
       const { board, issues } = parseBoard(yaml);
       if (!board) throw new UnprocessableEntityException({ message: "The YAML can't be read as a process", issues });
       const all = [...issues, ...validate(board), ...fileNameIssues(id, board)];
       if (hasErrors(all)) throw new UnprocessableEntityException({ message: 'The process has errors', issues: all });
 
+      const branch = this.userBranch(userId);
+      await this.github.ensureBranch(branch);
       const text = toYaml(board);
-      await atomicWrite(path, text);
-      return { projectId, board, version: blobSha(text), issues: all };
+      try {
+        const sha = await this.github.writeFile(path, text, { sha: baseVersion, message: `Update ${id}`, branch });
+        return { projectId, board, version: sha, issues: all };
+      } catch (e) {
+        if (isConflict(e)) {
+          const current = await this.github.readFile(path, branch);
+          throw new ConflictException({ message: 'The process changed since you loaded it', version: current?.sha });
+        }
+        throw e;
+      }
+    });
+  }
+
+  /** The diff between the user's in-progress edit and the agreed version on `main`. */
+  diffProcess(id: string, userId: string): Promise<ProcessDiff> {
+    return this.exclusive(async () => {
+      const { path } = await this.locate(id);
+      const branch = this.userBranch(userId);
+      if (!(await this.github.branchSha(branch))) return { hasChanges: false };
+      const diff = await this.github.diffFile(MAIN, branch, path);
+      if (!diff) return { hasChanges: false };
+      return { hasChanges: true, patch: diff.patch, additions: diff.additions, deletions: diff.deletions };
+    });
+  }
+
+  /** Merges the user's branch into `main`, making their edit the agreed version. */
+  acceptProcess(id: string, userId: string): Promise<ProcessFile> {
+    return this.exclusive(async () => {
+      const { path } = await this.locate(id);
+      const branch = this.userBranch(userId);
+      if (!(await this.github.branchSha(branch)))
+        throw new BadRequestException(`No changes from ${userId} to accept for ${id}`);
+
+      const result = await this.github.merge(MAIN, branch, `Accept ${id} changes from ${userId}`);
+      if (result === 'conflict')
+        throw new ConflictException({ message: `${id} changed on main since this edit was based; reload and redo the edit` });
+
+      const { text, sha } = (await this.github.readFile(path))!;
+      const { board, issues } = parseBoard(text);
+      if (!board) throw new UnprocessableEntityException({ message: `${id}.yaml can't be read as a process`, issues });
+      return {
+        projectId: (await this.locate(id)).projectId,
+        board,
+        version: sha,
+        issues: [...issues, ...validate(board), ...fileNameIssues(id, board)],
+      };
     });
   }
 
@@ -192,18 +274,25 @@ export class ProcessStore {
       const found = await this.locate(id);
       if (projectId !== null && !(await this.listProjects()).some((p) => p.id === projectId))
         throw new BadRequestException(`Project ${projectId} not found`);
+      let text: string;
       if (found.projectId !== projectId) {
-        await mkdir(this.processesDir(projectId), { recursive: true });
-        await rename(found.path, join(this.processesDir(projectId), `${id}.yaml`));
+        const file = (await this.github.readFile(found.path))!;
+        text = file.text;
+        await this.github.writeFile(this.processPath(projectId, id), text, { message: `Move ${id} to ${projectId ?? 'no project'}` });
+        await this.github.deleteFile(found.path, file.sha, `Move ${id} to ${projectId ?? 'no project'}`);
+      } else {
+        text = (await this.github.readFile(found.path))!.text;
       }
-      const { board } = parseBoard(await readFile(join(this.processesDir(projectId), `${id}.yaml`), 'utf8'));
+      const { board } = parseBoard(text);
       return { id, name: board?.name ?? id, projectId };
     });
   }
 
   deleteProcess(id: string): Promise<void> {
     return this.exclusive(async () => {
-      await rm((await this.locate(id)).path);
+      const { path } = await this.locate(id);
+      const file = (await this.github.readFile(path))!;
+      await this.github.deleteFile(path, file.sha, `Delete ${id}`);
     });
   }
 }
@@ -221,18 +310,6 @@ export function blobSha(text: string): string {
   return createHash('sha1').update(`blob ${body.length}\0`).update(body).digest('hex');
 }
 
-async function yamlFiles(dir: string): Promise<string[]> {
-  try {
-    return (await readdir(dir)).filter((f) => f.endsWith('.yaml')).sort();
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw e;
-  }
-}
-
-async function atomicWrite(path: string, text: string) {
-  await mkdir(resolve(path, '..'), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  await writeFile(tmp, text, 'utf8');
-  await rename(tmp, path);
+function isConflict(e: unknown): boolean {
+  return typeof e === 'object' && e !== null && 'status' in e && [409, 422].includes((e as { status: unknown }).status as number);
 }

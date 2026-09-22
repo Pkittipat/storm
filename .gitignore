@@ -12,3 +12,5 @@ coverage/
 .vscode/*
 !.vscode/extensions.json
 .stormm-data/
+
+.secrets/
