@@ -239,6 +239,12 @@
      don't substitute one for the other. */
   --color-hotspot-dot: #c2362b;
 
+  /* Usage: added (`+`) lines in the Review changes panel's diff. Removed
+     (`-`) lines reuse hotspot-surface/hotspot-text above rather than adding
+     a third pair — same destructive-red meaning as everywhere else. */
+  --color-diff-add: #2f7d4f;
+  --color-diff-add-surface: #e8f5ec;
+
   /* ============================================================
    * TYPOGRAPHY — FONT FAMILY
    * ============================================================

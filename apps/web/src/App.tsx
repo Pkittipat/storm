@@ -14,8 +14,9 @@ import {
   type Board,
 } from '@stormm/process-model'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, type ProcessSummary, type Project } from './api'
+import { api, type ProcessDiff, type ProcessSummary, type Project } from './api'
 import { Canvas, type CanvasBlock, type CanvasConnection, type Selection, type Viewport } from './canvas/Canvas'
+import { ChangesPanel } from './canvas/ChangesPanel'
 import { BLOCK_HEIGHT, BLOCK_WIDTH } from './canvas/geometry'
 import { Inspector } from './canvas/Inspector'
 import { YamlPanel } from './canvas/YamlPanel'
@@ -60,6 +61,9 @@ function App() {
   const [processId, setProcessId] = useState(processIdFromHash)
   const [selection, setSelection] = useState<Selection>(null)
   const [yamlOpen, setYamlOpen] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [diff, setDiff] = useState<ProcessDiff | null>(null)
+  const [accepting, setAccepting] = useState(false)
   const [viewport, setViewport] = useState(INITIAL_VIEWPORT)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -108,6 +112,8 @@ function App() {
     setViewFor(processId)
     setSelection(null)
     setViewport(INITIAL_VIEWPORT)
+    setReviewOpen(false)
+    setDiff(null)
   }
 
   useEffect(() => {
@@ -279,6 +285,29 @@ function App() {
   const share = () =>
     navigator.clipboard.writeText(window.location.href).then(() => setNotice({ text: 'Link copied' }), fail)
 
+  const openReview = () => {
+    if (!board) return
+    setYamlOpen(false)
+    setReviewOpen(true)
+    setDiff(null)
+    api.diffProcess(board.id).then(setDiff, fail)
+  }
+
+  const acceptChanges = async () => {
+    if (!board) return
+    setAccepting(true)
+    try {
+      await api.acceptProcess(board.id)
+      setNotice({ text: 'Changes accepted' })
+      setReviewOpen(false)
+      reload()
+    } catch (e) {
+      fail(e)
+    } finally {
+      setAccepting(false)
+    }
+  }
+
   // Delete/Backspace removes the selection; Escape clears it. Ignored while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -362,7 +391,17 @@ function App() {
                 <Button variant="secondary" onClick={share}>
                   Share
                 </Button>
-                <Button variant="primary" aria-pressed={yamlOpen} onClick={() => setYamlOpen((o) => !o)}>
+                <Button variant="secondary" aria-pressed={reviewOpen} onClick={() => (reviewOpen ? setReviewOpen(false) : openReview())}>
+                  Review changes
+                </Button>
+                <Button
+                  variant="primary"
+                  aria-pressed={yamlOpen}
+                  onClick={() => {
+                    setReviewOpen(false)
+                    setYamlOpen((o) => !o)
+                  }}
+                >
                   YAML
                   {errorCount > 0 && <span className="rounded-full bg-hotspot-surface px-1.5 text-chip text-hotspot-text">{errorCount}</span>}
                 </Button>
@@ -429,7 +468,9 @@ function App() {
             </section>
           )}
 
-          {board && yamlOpen ? (
+          {board && reviewOpen ? (
+            <ChangesPanel diff={diff} accepting={accepting} onAccept={acceptChanges} onClose={() => setReviewOpen(false)} />
+          ) : board && yamlOpen ? (
             <YamlPanel
               path={`stormm/processes/${board.id}.yaml`}
               yaml={yaml}
