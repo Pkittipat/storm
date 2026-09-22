@@ -1,6 +1,6 @@
 import type { BoardDiff } from '@stormm/process-model'
 import type { ProcessDiff } from '../api'
-import { Avatar, Button, IconButton } from '../components'
+import { Button, IconButton } from '../components'
 
 interface ChangeRow {
   id: string
@@ -35,17 +35,20 @@ interface ChangesListProps {
 }
 
 /**
- * Replaces the process-list sidebar while reviewing: one row per changed block (like a
- * VS Code source-control changes list), colored by whether it was added, changed, or
- * removed. Selecting a row shows that block's field-level diff in ChangeDetail, and the
- * same block highlights on the canvas. Connection changes list below, unselectable —
- * there's no per-connection detail to show.
+ * Floats over the canvas (in place of the process-list sidebar, which is hidden while
+ * reviewing): one row per changed block (like a VS Code source-control changes list),
+ * colored by whether it was added, changed, or removed. Selecting a row shows that
+ * block's field-level diff in ChangeDetail, and the same block highlights on the canvas.
+ * Connection changes list below, unselectable — there's no per-connection detail to show.
  */
 export function ChangesList({ diff, boardDiff, busy, selectedId, onSelect, onRequest, onAccept, onClose }: ChangesListProps) {
   const rows = boardDiff ? rowsFrom(boardDiff) : []
 
   return (
-    <nav aria-label="Changes" className="flex w-sidebar-width shrink-0 flex-col gap-step-2xs border-r border-border bg-surface-sunken p-step-lg">
+    <nav
+      aria-label="Changes"
+      className="absolute top-step-2xl left-step-2xl z-10 flex max-h-[70vh] w-sidebar-width flex-col gap-step-2xs rounded-floating-panel border border-border bg-surface-sunken p-step-lg shadow-float-md"
+    >
       <div className="flex items-center justify-between py-0 pr-step-2xs pb-step-lg pl-step-md">
         <span className="text-heading font-semibold tracking-heading text-text">Changes</span>
         <IconButton size="md" aria-label="Close changes" onClick={onClose} icon={<span aria-hidden="true">&times;</span>} />
@@ -67,7 +70,7 @@ export function ChangesList({ diff, boardDiff, busy, selectedId, onSelect, onReq
           ))}
       </div>
 
-      <div className="-mx-step-lg flex min-h-0 flex-grow flex-col gap-px overflow-y-auto px-step-lg pb-step-lg">
+      <div className="-mx-step-lg flex min-h-0 flex-col gap-px overflow-y-auto px-step-lg pb-step-2xs">
         {rows.map((row) => (
           <button
             key={row.id}
@@ -101,11 +104,6 @@ export function ChangesList({ diff, boardDiff, busy, selectedId, onSelect, onReq
             ))}
           </div>
         )}
-      </div>
-
-      <div className="mt-auto flex items-center gap-step-md border-t border-border p-step-sm pt-step-md">
-        <Avatar initial="F" />
-        <span className="flex-grow text-body font-medium text-text">Fang</span>
       </div>
     </nav>
   )

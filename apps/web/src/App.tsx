@@ -408,39 +408,25 @@ function App() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {reviewOpen ? (
-        <ChangesList
-          diff={diff}
-          boardDiff={boardDiff}
-          busy={busy}
-          selectedId={changeSelection}
-          onSelect={setChangeSelection}
-          onRequest={requestChange}
-          onAccept={acceptChanges}
-          onClose={() => setReviewOpen(false)}
-        />
-      ) : (
-        !sidebarHidden && (
-          <Sidebar userInitial="F" userName="Fang" onCollapse={() => toggleSidebar(true)}>
-            <ProcessNav
-              // The open process's name is live (edited in the header) before the list is refetched.
-              processes={processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null}
-              projects={projects}
-              activeId={processId}
-              onNewProcess={createProcess}
-              onMoveProcess={moveProcess}
-              onNewProject={createProject}
-              onRenameProject={renameProject}
-              onDeleteProject={deleteProject}
-            />
-          </Sidebar>
-        )
+      {!sidebarHidden && (
+        <Sidebar userInitial="F" userName="Fang" onCollapse={() => toggleSidebar(true)}>
+          <ProcessNav
+            // The open process's name is live (edited in the header) before the list is refetched.
+            processes={processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null}
+            projects={projects}
+            activeId={processId}
+            onNewProcess={createProcess}
+            onMoveProcess={moveProcess}
+            onNewProject={createProject}
+            onRenameProject={renameProject}
+            onDeleteProject={deleteProject}
+          />
+        </Sidebar>
       )}
 
       <main className="flex min-w-0 flex-grow flex-col">
         <Header
           leading={
-            !reviewOpen &&
             sidebarHidden && (
               <IconButton size="md" aria-label="Show sidebar" onClick={() => toggleSidebar(false)} icon={<SidebarIcon />} />
             )
@@ -503,7 +489,19 @@ function App() {
           }
         />
 
-        <div className="flex min-h-0 flex-grow">
+        <div className="relative flex min-h-0 flex-grow">
+          {reviewOpen && (
+            <ChangesList
+              diff={diff}
+              boardDiff={boardDiff}
+              busy={busy}
+              selectedId={changeSelection}
+              onSelect={setChangeSelection}
+              onRequest={requestChange}
+              onAccept={acceptChanges}
+              onClose={() => setReviewOpen(false)}
+            />
+          )}
           {reviewOpen && diffPreview ? (
             <Canvas
               blocks={reviewCanvasBlocks}
