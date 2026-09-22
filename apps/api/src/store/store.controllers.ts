@@ -60,6 +60,12 @@ export class ProcessesController {
     return this.store.diffProcess(id, userId(user));
   }
 
+  @Post(':id/request-change')
+  @HttpCode(204)
+  requestChange(@Param('id') id: string, @Headers('x-stormm-user') user?: string) {
+    return this.store.requestChange(id, userId(user));
+  }
+
   @Post(':id/accept')
   @HttpCode(200)
   accept(@Param('id') id: string, @Headers('x-stormm-user') user?: string) {

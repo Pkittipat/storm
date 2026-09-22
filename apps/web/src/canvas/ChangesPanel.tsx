@@ -3,17 +3,21 @@ import type { ProcessDiff } from '../api'
 
 interface ChangesPanelProps {
   diff: ProcessDiff | null
-  accepting: boolean
+  /** `'requesting'` while marking the edit ready for review; `'accepting'` while merging it. */
+  busy: 'requesting' | 'accepting' | null
+  onRequest: () => void
   onAccept: () => void
   onClose: () => void
 }
 
 /**
  * Docked review panel: the diff between the current user's in-progress edit and the
- * agreed version on `main`, with an Accept action that merges it in. `diff` is `null`
+ * agreed version on `main`. Before the edit is requested, only "Request change" shows
+ * (the editor deciding they're done) — Accept only appears once it's been requested,
+ * so no one can merge an edit the author is still in the middle of. `diff` is `null`
  * while the request is in flight.
  */
-export function ChangesPanel({ diff, accepting, onAccept, onClose }: ChangesPanelProps) {
+export function ChangesPanel({ diff, busy, onRequest, onAccept, onClose }: ChangesPanelProps) {
   return (
     <aside aria-label="Review changes" className="box-border flex h-full w-[420px] shrink-0 flex-col overflow-hidden border-l border-border bg-surface-sunken p-step-lg">
       <div className="flex items-center justify-between pt-step-2xs pr-step-2xs pb-0 pl-step-md">
@@ -28,11 +32,17 @@ export function ChangesPanel({ diff, accepting, onAccept, onClose }: ChangesPane
           <div className="px-step-md py-step-lg text-meta text-text-muted">No changes to review — this matches the agreed version.</div>
         ) : (
           <PanelSection
-            label={`Changes · +${diff.additions ?? 0} -${diff.deletions ?? 0}`}
+            label={`Changes · +${diff.additions ?? 0} -${diff.deletions ?? 0}${diff.requested ? ' · requested' : ''}`}
             action={
-              <Button variant="primary" onClick={onAccept} disabled={accepting} className="h-7! px-step-md!">
-                {accepting ? 'Accepting…' : 'Accept'}
-              </Button>
+              diff.requested ? (
+                <Button variant="primary" onClick={onAccept} disabled={busy !== null} className="h-7! px-step-md!">
+                  {busy === 'accepting' ? 'Accepting…' : 'Accept'}
+                </Button>
+              ) : (
+                <Button variant="primary" onClick={onRequest} disabled={busy !== null} className="h-7! px-step-md!">
+                  {busy === 'requesting' ? 'Requesting…' : 'Request change'}
+                </Button>
+              )
             }
           >
             {diff.patch ? (

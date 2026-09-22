@@ -56,6 +56,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export interface ProcessDiff {
   hasChanges: boolean
+  /** True once the edit has been requested for review (a pull request is open) — see `requestChange`. */
+  requested: boolean
   /** Unified diff of the process file, `main` vs. the current user's branch. */
   patch?: string
   additions?: number
@@ -70,7 +72,9 @@ export const api = {
   saveProcess: (id: string, yaml: string, baseVersion: string) => request<ProcessFile>('PUT', `/processes/${id}`, { yaml, baseVersion }),
   /** The diff between the current user's in-progress edit and the agreed version on `main`. */
   diffProcess: (id: string) => request<ProcessDiff>('GET', `/processes/${id}/diff`),
-  /** Merges the current user's edit into `main`, making it the agreed version. */
+  /** Marks the edit ready for someone else to review — until this, only the editor can see it. */
+  requestChange: (id: string) => request<void>('POST', `/processes/${id}/request-change`),
+  /** Merges the current user's edit into `main`, making it the agreed version. Refused until requested. */
   acceptProcess: (id: string) => request<ProcessFile>('POST', `/processes/${id}/accept`),
   moveProcess: (id: string, projectId: string | null) => request<ProcessSummary>('PATCH', `/processes/${id}`, { projectId }),
   deleteProcess: (id: string) => request<void>('DELETE', `/processes/${id}`),

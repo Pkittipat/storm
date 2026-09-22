@@ -63,7 +63,7 @@ function App() {
   const [yamlOpen, setYamlOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [diff, setDiff] = useState<ProcessDiff | null>(null)
-  const [accepting, setAccepting] = useState(false)
+  const [busy, setBusy] = useState<'requesting' | 'accepting' | null>(null)
   const [viewport, setViewport] = useState(INITIAL_VIEWPORT)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -293,9 +293,22 @@ function App() {
     api.diffProcess(board.id).then(setDiff, fail)
   }
 
+  const requestChange = async () => {
+    if (!board) return
+    setBusy('requesting')
+    try {
+      await api.requestChange(board.id)
+      setDiff(await api.diffProcess(board.id))
+    } catch (e) {
+      fail(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const acceptChanges = async () => {
     if (!board) return
-    setAccepting(true)
+    setBusy('accepting')
     try {
       await api.acceptProcess(board.id)
       setNotice({ text: 'Changes accepted' })
@@ -304,7 +317,7 @@ function App() {
     } catch (e) {
       fail(e)
     } finally {
-      setAccepting(false)
+      setBusy(null)
     }
   }
 
@@ -469,7 +482,7 @@ function App() {
           )}
 
           {board && reviewOpen ? (
-            <ChangesPanel diff={diff} accepting={accepting} onAccept={acceptChanges} onClose={() => setReviewOpen(false)} />
+            <ChangesPanel diff={diff} busy={busy} onRequest={requestChange} onAccept={acceptChanges} onClose={() => setReviewOpen(false)} />
           ) : board && yamlOpen ? (
             <YamlPanel
               path={`stormm/processes/${board.id}.yaml`}

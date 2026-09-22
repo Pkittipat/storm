@@ -71,12 +71,20 @@ describe('Processes as YAML files (e2e)', () => {
     expect((await http().get('/processes').expect(200)).body).toEqual([{ id: 'place-order', name: 'Place order', projectId: 'checkout' }]);
 
     const diff = (await http().get('/processes/place-order/diff').expect(200)).body;
-    expect(diff.hasChanges).toBe(true);
+    expect(diff).toEqual(expect.objectContaining({ hasChanges: true, requested: false }));
+
+    // Not requested for review yet — no one else can accept it out from under the editor.
+    await http().post('/processes/place-order/accept').expect(400);
+
+    await http().post('/processes/place-order/request-change').expect(204);
+    expect((await http().get('/processes/place-order/diff').expect(200)).body).toEqual(
+      expect.objectContaining({ hasChanges: true, requested: true }),
+    );
 
     const accepted = (await http().post('/processes/place-order/accept').expect(200)).body;
     expect(accepted.board).toEqual(board);
     expect(github.read(file('checkout', 'place-order'))).toBe(text);
-    expect((await http().get('/processes/place-order/diff').expect(200)).body).toEqual({ hasChanges: false });
+    expect((await http().get('/processes/place-order/diff').expect(200)).body).toEqual({ hasChanges: false, requested: false });
   });
 
   it('refuses a save based on an old version', async () => {

@@ -145,6 +145,32 @@ export class GithubRepo {
     return { status: file.status, patch: file.patch, additions: file.additions, deletions: file.deletions };
   }
 
+  /** The open pull request for `head` into `base`, if one exists. */
+  async findOpenPullRequest(base: string, head: string): Promise<{ number: number } | null> {
+    const octokit = await this.octokit();
+    const { data } = await octokit.rest.pulls.list({
+      owner: this.owner,
+      repo: this.repo,
+      state: 'open',
+      base,
+      head: `${this.owner}:${head}`,
+    });
+    return data[0] ? { number: data[0].number } : null;
+  }
+
+  /** Opens a pull request for `head` into `base`, or returns the existing one if there already is one. */
+  async openPullRequest(base: string, head: string, title: string): Promise<{ number: number }> {
+    const octokit = await this.octokit();
+    try {
+      const { data } = await octokit.rest.pulls.create({ owner: this.owner, repo: this.repo, base, head, title });
+      return { number: data.number };
+    } catch (e) {
+      const existing = await this.findOpenPullRequest(base, head);
+      if (existing) return existing;
+      throw e;
+    }
+  }
+
   /**
    * Merges `head` into `base`. Returns `'merged'`, `'up-to-date'` (nothing to merge), or
    * `'conflict'` (needs a manual resolution GitHub can't fast-forward or auto-merge).

@@ -44,6 +44,8 @@ export interface ProcessFile {
 
 export interface ProcessDiff {
   hasChanges: boolean;
+  /** True once the edit has been requested for review (a pull request is open) — see `requestChange`. */
+  requested: boolean;
   /** Unified diff of the process file, `main` vs. the user's branch; absent when there's nothing to show. */
   patch?: string;
   additions?: number;
@@ -238,20 +240,39 @@ export class ProcessStore {
     return this.exclusive(async () => {
       const { path } = await this.locate(id);
       const branch = this.userBranch(userId);
-      if (!(await this.github.branchSha(branch))) return { hasChanges: false };
+      if (!(await this.github.branchSha(branch))) return { hasChanges: false, requested: false };
       const diff = await this.github.diffFile(MAIN, branch, path);
-      if (!diff) return { hasChanges: false };
-      return { hasChanges: true, patch: diff.patch, additions: diff.additions, deletions: diff.deletions };
+      if (!diff) return { hasChanges: false, requested: false };
+      const requested = (await this.github.findOpenPullRequest(MAIN, branch)) !== null;
+      return { hasChanges: true, requested, patch: diff.patch, additions: diff.additions, deletions: diff.deletions };
     });
   }
 
-  /** Merges the user's branch into `main`, making their edit the agreed version. */
+  /**
+   * Marks the user's edit as ready for someone else to review and accept — opens a pull
+   * request for their branch (or reuses one already open). Before this, the edit is only
+   * visible to the person making it; `acceptProcess` refuses until it's been requested.
+   */
+  requestChange(id: string, userId: string): Promise<void> {
+    return this.exclusive(async () => {
+      const { path } = await this.locate(id);
+      const branch = this.userBranch(userId);
+      if (!(await this.github.branchSha(branch))) throw new BadRequestException(`No changes from ${userId} to request for ${id}`);
+      const diff = await this.github.diffFile(MAIN, branch, path);
+      if (!diff) throw new BadRequestException(`No changes from ${userId} to request for ${id}`);
+      await this.github.openPullRequest(MAIN, branch, `Update ${id} (from ${userId})`);
+    });
+  }
+
+  /** Merges the user's branch into `main`, making their edit the agreed version. Refuses until it's been requested. */
   acceptProcess(id: string, userId: string): Promise<ProcessFile> {
     return this.exclusive(async () => {
       const { path } = await this.locate(id);
       const branch = this.userBranch(userId);
       if (!(await this.github.branchSha(branch)))
         throw new BadRequestException(`No changes from ${userId} to accept for ${id}`);
+      if (!(await this.github.findOpenPullRequest(MAIN, branch)))
+        throw new BadRequestException(`${userId}'s change hasn't been requested for review yet`);
 
       const result = await this.github.merge(MAIN, branch, `Accept ${id} changes from ${userId}`);
       if (result === 'conflict')

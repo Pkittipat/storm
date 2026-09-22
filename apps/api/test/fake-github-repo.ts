@@ -17,6 +17,9 @@ export class FakeGithubRepo {
   // branch -> path -> text. Branches other than `main` start as a shallow copy of
   // whatever `main` held when they were created, same as a real git branch.
   private readonly branches = new Map<string, Map<string, string>>([[MAIN, new Map()]]);
+  // "base->head" pairs with an open pull request, fake PR numbers assigned in order opened.
+  private readonly openPulls = new Map<string, number>();
+  private nextPullNumber = 1;
 
   private files(ref: string): Map<string, string> {
     const files = this.branches.get(ref);
@@ -89,7 +92,22 @@ export class FakeGithubRepo {
         changed = true;
       }
     }
+    this.openPulls.delete(`${base}->${head}`); // merging closes any open PR, same as real GitHub
     return changed ? 'merged' : 'up-to-date';
+  }
+
+  async findOpenPullRequest(base: string, head: string): Promise<{ number: number } | null> {
+    const number = this.openPulls.get(`${base}->${head}`);
+    return number === undefined ? null : { number };
+  }
+
+  async openPullRequest(base: string, head: string): Promise<{ number: number }> {
+    const key = `${base}->${head}`;
+    const existing = this.openPulls.get(key);
+    if (existing !== undefined) return { number: existing };
+    const number = this.nextPullNumber++;
+    this.openPulls.set(key, number);
+    return { number };
   }
 
   // ── Test-only helpers, not part of GithubRepo's interface ──────────────────
