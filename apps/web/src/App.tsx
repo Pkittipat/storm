@@ -139,12 +139,15 @@ function App() {
 
   const boardDiff = useMemo(() => (diffPreview ? computeBoardDiff(diffPreview.before, diffPreview.after) : null), [diffPreview])
 
-  // Auto-select the first changed block once the diff loads, so ChangeDetail isn't empty.
+  // Auto-select the first changed block the moment a diff loads, so ChangeDetail isn't
+  // empty at first — but only once per fetch, or closing it would just reselect it right back.
+  const autoSelectedFor = useRef<ProcessDiff | null>(null)
   useEffect(() => {
-    if (!boardDiff || changeSelection) return
+    if (!boardDiff || !diff || autoSelectedFor.current === diff) return
+    autoSelectedFor.current = diff
     const first = boardDiff.blocks.removed[0] ?? boardDiff.blocks.changed[0]?.after ?? boardDiff.blocks.added[0]
     if (first) setChangeSelection(first.id)
-  }, [boardDiff, changeSelection])
+  }, [boardDiff, diff])
 
   const selectedChange = useMemo(() => {
     if (!changeSelection || !boardDiff) return null
