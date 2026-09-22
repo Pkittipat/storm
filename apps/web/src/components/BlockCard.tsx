@@ -1,7 +1,14 @@
+import type { ChangeStatus } from '@stormm/process-model'
 import type { PointerEvent } from 'react'
 import { Chip } from './Chip'
 import { TypeSwatch } from './TypeSwatch'
 import { blockKindClasses, blockKindLabel, type BlockKind } from './types'
+
+const diffBorderClasses: Record<ChangeStatus, string> = {
+  added: 'border-[1.5px] border-diff-add',
+  removed: 'border-[1.5px] border-hotspot-text border-dashed opacity-70',
+  changed: 'border-[1.5px] border-diff-change',
+}
 
 interface BlockCardProps {
   kind: BlockKind
@@ -10,6 +17,8 @@ interface BlockCardProps {
   /** Who performs this step (e.g. "Customer") — an attribute of the block, never a block of its own. */
   actor?: string | null
   hotspots?: number
+  /** In review mode, marks this block as added/removed/changed instead of its normal kind-colored border. */
+  diffStatus?: ChangeStatus
   /** Makes the right-hand port a drag handle for drawing an outgoing connection. */
   onConnectStart?: (e: PointerEvent<HTMLSpanElement>) => void
   /** Absolutely-positions the card on a canvas. Omit to let it flow inline (as in a palette/showcase). */
@@ -27,9 +36,11 @@ interface BlockCardProps {
  * absolutely on a canvas surface (the parent must be `position:
  * relative`).
  */
-export function BlockCard({ kind, title, selected = false, actor, hotspots, onConnectStart, position }: BlockCardProps) {
+export function BlockCard({ kind, title, selected = false, actor, hotspots, diffStatus, onConnectStart, position }: BlockCardProps) {
   const { surface, line } = blockKindClasses[kind]
   const portClass = selected ? 'border-accent' : 'border-port'
+  const border = diffStatus ? diffBorderClasses[diffStatus] : selected ? 'border-[1.5px] border-accent' : line
+  const ring = selected ? 'ring-4 ring-accent/[14%]' : ''
 
   return (
     <div className="flex flex-col gap-step-2xs" style={position ? { position: 'absolute', left: position.left, top: position.top } : undefined}>
@@ -37,11 +48,7 @@ export function BlockCard({ kind, title, selected = false, actor, hotspots, onCo
         <TypeSwatch kind={kind} />
         {blockKindLabel[kind]}
       </div>
-      <div
-        className={`relative box-border flex h-node-height w-node-width flex-col gap-step-xs rounded-node border p-step-lg ${surface} ${
-          selected ? 'border-[1.5px] border-accent ring-4 ring-accent/[14%]' : line
-        }`}
-      >
+      <div className={`relative box-border flex h-node-height w-node-width flex-col gap-step-xs rounded-node border p-step-lg ${surface} ${border} ${ring}`}>
         <div className="line-clamp-2 text-emphasis font-semibold break-words text-text">{title}</div>
         {actor || hotspots ? (
           <div className="mt-auto flex gap-step-2xs">

@@ -8,6 +8,15 @@ export const GRID = 20
 
 export const snap = (v: number) => Math.round(v / GRID) * GRID
 
+/** Derived-layout spacing, in world pixels: columns follow the connections, one band of rows per connected group. */
+export const LAYOUT = {
+  columnWidth: BLOCK_WIDTH + 64,
+  rowHeight: BLOCK_HEIGHT + 28,
+  groupGap: 48,
+  originX: 0,
+  originY: 0,
+}
+
 export interface Point {
   x: number
   y: number

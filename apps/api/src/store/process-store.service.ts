@@ -50,6 +50,9 @@ export interface ProcessDiff {
   patch?: string;
   additions?: number;
   deletions?: number;
+  /** The file's text on `main` and on the user's branch, for a block-level (not just line) diff. */
+  beforeYaml?: string;
+  afterYaml?: string;
 }
 
 /** Repo folder for processes outside any project; not a slug, so no project id can take it. */
@@ -243,8 +246,20 @@ export class ProcessStore {
       if (!(await this.github.branchSha(branch))) return { hasChanges: false, requested: false };
       const diff = await this.github.diffFile(MAIN, branch, path);
       if (!diff) return { hasChanges: false, requested: false };
-      const requested = (await this.github.findOpenPullRequest(MAIN, branch)) !== null;
-      return { hasChanges: true, requested, patch: diff.patch, additions: diff.additions, deletions: diff.deletions };
+      const [requested, before, after] = await Promise.all([
+        this.github.findOpenPullRequest(MAIN, branch).then((pr) => pr !== null),
+        this.github.readFile(path, MAIN),
+        this.github.readFile(path, branch),
+      ]);
+      return {
+        hasChanges: true,
+        requested,
+        patch: diff.patch,
+        additions: diff.additions,
+        deletions: diff.deletions,
+        beforeYaml: before?.text,
+        afterYaml: after?.text,
+      };
     });
   }
 

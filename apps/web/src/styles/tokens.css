@@ -239,11 +239,19 @@
      don't substitute one for the other. */
   --color-hotspot-dot: #c2362b;
 
-  /* Usage: added (`+`) lines in the Review changes panel's diff. Removed
-     (`-`) lines reuse hotspot-surface/hotspot-text above rather than adding
-     a third pair — same destructive-red meaning as everywhere else. */
+  /* Usage: added (`+`) lines in the Review changes panel's diff, and the
+     border of an added block in its split before/after view. Removed
+     lines/blocks reuse hotspot-surface/hotspot-text above rather than
+     adding a third red — same destructive meaning as everywhere else. */
   --color-diff-add: #2f7d4f;
   --color-diff-add-surface: #e8f5ec;
+
+  /* Usage: the border of a changed-but-not-added/removed block in the
+     split before/after diff view (e.g. a renamed block, present on both
+     sides). Deliberately distinct from --color-aggregate's amber so a
+     changed Aggregate block doesn't read as merely "an aggregate". */
+  --color-diff-change: #a06a00;
+  --color-diff-change-surface: #faf1de;
 
   /* ============================================================
    * TYPOGRAPHY — FONT FAMILY

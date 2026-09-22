@@ -1,9 +1,12 @@
 import {
   addBlock as addBlockTo,
+  blockStatus,
   connect as connectBlocks,
+  diffBoards as computeBoardDiff,
   disconnect,
   findBlock,
   layoutBoard,
+  parseBoard,
   removeBlock,
   renameBoard,
   retitleNewBlock,
@@ -16,8 +19,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type ProcessDiff, type ProcessSummary, type Project } from './api'
 import { Canvas, type CanvasBlock, type CanvasConnection, type Selection, type Viewport } from './canvas/Canvas'
-import { ChangesPanel } from './canvas/ChangesPanel'
-import { BLOCK_HEIGHT, BLOCK_WIDTH } from './canvas/geometry'
+import { ChangeDetail } from './canvas/ChangeDetail'
+import { ChangesList } from './canvas/ChangesList'
+import { LAYOUT } from './canvas/geometry'
 import { Inspector } from './canvas/Inspector'
 import { YamlPanel } from './canvas/YamlPanel'
 import { Button, Composer, EditableText, Header, IconButton, Sidebar, blockKindLabel, type BlockKind } from './components'
@@ -26,15 +30,6 @@ import { useDraggedPositions } from './useDraggedPositions'
 import { useProcess, type SaveState } from './useProcess'
 
 const INITIAL_VIEWPORT: Viewport = { x: 64, y: 88, zoom: 1 }
-
-/** Derived-layout spacing, in world pixels: columns follow the connections, one band of rows per connected group. */
-const LAYOUT = {
-  columnWidth: BLOCK_WIDTH + 64,
-  rowHeight: BLOCK_HEIGHT + 28,
-  groupGap: 48,
-  originX: 0,
-  originY: 0,
-}
 
 const SIDEBAR_KEY = 'stormm.sidebarHidden'
 const readSidebarHidden = () => {
@@ -63,8 +58,10 @@ function App() {
   const [yamlOpen, setYamlOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [diff, setDiff] = useState<ProcessDiff | null>(null)
+  const [changeSelection, setChangeSelection] = useState<string | null>(null)
   const [busy, setBusy] = useState<'requesting' | 'accepting' | null>(null)
   const [viewport, setViewport] = useState(INITIAL_VIEWPORT)
+  const [reviewViewport, setReviewViewport] = useState(INITIAL_VIEWPORT)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [renaming, setRenaming] = useState(false)
   /**
@@ -114,6 +111,7 @@ function App() {
     setViewport(INITIAL_VIEWPORT)
     setReviewOpen(false)
     setDiff(null)
+    setChangeSelection(null)
   }
 
   useEffect(() => {
@@ -129,6 +127,71 @@ function App() {
   const dragged = useDraggedPositions(processId, ids)
   const issues = useMemo(() => (board ? validate(board) : []), [board])
   const yaml = useMemo(() => (board ? toYaml(board) : ''), [board])
+
+  // Parses the diff's before/after YAML into boards for the review view; falls back to
+  // the raw text patch (rendered by ChangesList) if either side doesn't parse.
+  const diffPreview = useMemo(() => {
+    if (!diff?.beforeYaml || !diff.afterYaml) return null
+    const before = parseBoard(diff.beforeYaml).board
+    const after = parseBoard(diff.afterYaml).board
+    return before && after ? { before, after } : null
+  }, [diff])
+
+  const boardDiff = useMemo(() => (diffPreview ? computeBoardDiff(diffPreview.before, diffPreview.after) : null), [diffPreview])
+
+  // Auto-select the first changed block once the diff loads, so ChangeDetail isn't empty.
+  useEffect(() => {
+    if (!boardDiff || changeSelection) return
+    const first = boardDiff.blocks.removed[0] ?? boardDiff.blocks.changed[0]?.after ?? boardDiff.blocks.added[0]
+    if (first) setChangeSelection(first.id)
+  }, [boardDiff, changeSelection])
+
+  const selectedChange = useMemo(() => {
+    if (!changeSelection || !boardDiff) return null
+    const added = boardDiff.blocks.added.find((b) => b.id === changeSelection)
+    if (added) return { status: 'added' as const, after: added }
+    const removed = boardDiff.blocks.removed.find((b) => b.id === changeSelection)
+    if (removed) return { status: 'removed' as const, before: removed }
+    const changed = boardDiff.blocks.changed.find((c) => c.after.id === changeSelection)
+    if (changed) return { status: 'changed' as const, before: changed.before, after: changed.after, changes: changed.changes }
+    return null
+  }, [changeSelection, boardDiff])
+
+  // The review canvas shows the current (after) state plus any removed blocks, so a
+  // deletion is visible rather than just vanishing — one board, one layout, colored by status.
+  const reviewLayout = useMemo(() => {
+    if (!diffPreview || !boardDiff) return null
+    const merged: Board = {
+      ...diffPreview.after,
+      blocks: [...diffPreview.after.blocks, ...boardDiff.blocks.removed],
+      connections: [...diffPreview.after.connections, ...boardDiff.connections.removed],
+    }
+    return layoutBoard(merged, LAYOUT)
+  }, [diffPreview, boardDiff])
+
+  const reviewCanvasBlocks: CanvasBlock[] = useMemo(() => {
+    if (!diffPreview || !boardDiff || !reviewLayout) return []
+    const statusById = blockStatus(boardDiff)
+    return [...diffPreview.after.blocks, ...boardDiff.blocks.removed].map((b) => ({
+      id: b.id,
+      kind: b.kind,
+      title: b.title,
+      actor: b.actor,
+      hotspots: b.hotspots.length,
+      diffStatus: statusById.get(b.id),
+      ...(reviewLayout.positions.get(b.id) ?? { x: 0, y: 0 }),
+    }))
+  }, [diffPreview, boardDiff, reviewLayout])
+
+  const reviewCanvasConnections: CanvasConnection[] = useMemo(() => {
+    if (!diffPreview || !boardDiff) return []
+    const addedKeys = new Set(boardDiff.connections.added.map((c) => `${c.from}->${c.to}`))
+    const removedKeys = new Set(boardDiff.connections.removed.map((c) => `${c.from}->${c.to}`))
+    return [...diffPreview.after.connections, ...boardDiff.connections.removed].map((c) => {
+      const key = `${c.from}->${c.to}`
+      return { id: key, from: c.from, to: c.to, diffStatus: addedKeys.has(key) ? 'added' : removedKeys.has(key) ? 'removed' : undefined }
+    })
+  }, [diffPreview, boardDiff])
 
   const canvasBlocks: CanvasBlock[] = useMemo(() => {
     if (!board || !layout) return []
@@ -290,6 +353,8 @@ function App() {
     setYamlOpen(false)
     setReviewOpen(true)
     setDiff(null)
+    setChangeSelection(null)
+    setReviewViewport(INITIAL_VIEWPORT)
     api.diffProcess(board.id).then(setDiff, fail)
   }
 
@@ -313,6 +378,7 @@ function App() {
       await api.acceptProcess(board.id)
       setNotice({ text: 'Changes accepted' })
       setReviewOpen(false)
+      setChangeSelection(null)
       reload()
     } catch (e) {
       fail(e)
@@ -342,25 +408,39 @@ function App() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {!sidebarHidden && (
-        <Sidebar userInitial="F" userName="Fang" onCollapse={() => toggleSidebar(true)}>
-          <ProcessNav
-            // The open process's name is live (edited in the header) before the list is refetched.
-            processes={processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null}
-            projects={projects}
-            activeId={processId}
-            onNewProcess={createProcess}
-            onMoveProcess={moveProcess}
-            onNewProject={createProject}
-            onRenameProject={renameProject}
-            onDeleteProject={deleteProject}
-          />
-        </Sidebar>
+      {reviewOpen ? (
+        <ChangesList
+          diff={diff}
+          boardDiff={boardDiff}
+          busy={busy}
+          selectedId={changeSelection}
+          onSelect={setChangeSelection}
+          onRequest={requestChange}
+          onAccept={acceptChanges}
+          onClose={() => setReviewOpen(false)}
+        />
+      ) : (
+        !sidebarHidden && (
+          <Sidebar userInitial="F" userName="Fang" onCollapse={() => toggleSidebar(true)}>
+            <ProcessNav
+              // The open process's name is live (edited in the header) before the list is refetched.
+              processes={processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null}
+              projects={projects}
+              activeId={processId}
+              onNewProcess={createProcess}
+              onMoveProcess={moveProcess}
+              onNewProject={createProject}
+              onRenameProject={renameProject}
+              onDeleteProject={deleteProject}
+            />
+          </Sidebar>
+        )
       )}
 
       <main className="flex min-w-0 flex-grow flex-col">
         <Header
           leading={
+            !reviewOpen &&
             sidebarHidden && (
               <IconButton size="md" aria-label="Show sidebar" onClick={() => toggleSidebar(false)} icon={<SidebarIcon />} />
             )
@@ -424,7 +504,16 @@ function App() {
         />
 
         <div className="flex min-h-0 flex-grow">
-          {board && layout ? (
+          {reviewOpen && diffPreview ? (
+            <Canvas
+              blocks={reviewCanvasBlocks}
+              connections={reviewCanvasConnections}
+              selection={changeSelection ? { type: 'block', id: changeSelection } : null}
+              viewport={reviewViewport}
+              onViewportChange={setReviewViewport}
+              onSelect={(s) => setChangeSelection(s?.type === 'block' ? s.id : null)}
+            />
+          ) : board && layout ? (
             <Canvas
               blocks={canvasBlocks}
               connections={canvasConnections}
@@ -481,8 +570,16 @@ function App() {
             </section>
           )}
 
-          {board && reviewOpen ? (
-            <ChangesPanel diff={diff} busy={busy} onRequest={requestChange} onAccept={acceptChanges} onClose={() => setReviewOpen(false)} />
+          {reviewOpen ? (
+            selectedChange && (
+              <ChangeDetail
+                status={selectedChange.status}
+                before={'before' in selectedChange ? selectedChange.before : undefined}
+                after={'after' in selectedChange ? selectedChange.after : undefined}
+                changes={'changes' in selectedChange ? selectedChange.changes : undefined}
+                onClose={() => setChangeSelection(null)}
+              />
+            )
           ) : board && yamlOpen ? (
             <YamlPanel
               path={`stormm/processes/${board.id}.yaml`}

@@ -1,3 +1,4 @@
+import type { ChangeStatus } from '@stormm/process-model'
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { BlockCard, ZoomControl, type BlockKind } from '../components'
 import { BLOCK_HEIGHT, BLOCK_WIDTH, PORT_Y, connectorPath, snap, type Point } from './geometry'
@@ -19,6 +20,8 @@ export interface CanvasBlock {
   hotspots: number
   x: number
   y: number
+  /** In a diff view, marks this block as added/removed/changed instead of its normal kind-colored border. */
+  diffStatus?: ChangeStatus
 }
 
 export interface CanvasConnection {
@@ -26,6 +29,8 @@ export interface CanvasConnection {
   id: string
   from: string
   to: string
+  /** In a diff view, colors this connector instead of the normal neutral stroke. */
+  diffStatus?: 'added' | 'removed'
 }
 
 interface CanvasProps {
@@ -34,9 +39,10 @@ interface CanvasProps {
   selection: Selection
   viewport: Viewport
   onViewportChange: (v: Viewport) => void
-  onSelect: (s: Selection) => void
-  onMoveBlock: (id: string, x: number, y: number) => void
-  onConnect: (sourceId: string, targetId: string) => void
+  /** Omit all three (a read-only diff view) to disable selecting, dragging and connecting — panning/zooming still work. */
+  onSelect?: (s: Selection) => void
+  onMoveBlock?: (id: string, x: number, y: number) => void
+  onConnect?: (sourceId: string, targetId: string) => void
   /** Floating overlays (composer, empty state) rendered above the world, unscaled. */
   children?: ReactNode
 }
@@ -187,17 +193,17 @@ export function Canvas({
     if (!g) return
     if (g.type === 'pan') {
       if (g.moved) setView(view, 'now')
-      else onSelect(null)
+      else onSelect?.(null)
     }
     if (g.type === 'drag') {
       const x = dragPos && snap(dragPos.x)
       const y = dragPos && snap(dragPos.y)
-      if (g.moved && x !== null && y !== null && (x !== g.origin.x || y !== g.origin.y)) onMoveBlock(g.id, x, y)
+      if (onMoveBlock && g.moved && x !== null && y !== null && (x !== g.origin.x || y !== g.origin.y)) onMoveBlock(g.id, x, y)
       setDragPos(null)
     }
     if (g.type === 'connect') {
       const target = blockAt(toWorld(e.clientX, e.clientY))
-      if (target && target.id !== g.sourceId) onConnect(g.sourceId, target.id)
+      if (onConnect && target && target.id !== g.sourceId) onConnect(g.sourceId, target.id)
       setPending(null)
     }
   }
@@ -239,9 +245,23 @@ export function Canvas({
             if (!source || !target) return null
             const d = connectorPath(rightPort(source), leftPort(target))
             const selected = selection?.type === 'connection' && selection.id === c.id
+            const stroke = selected
+              ? 'var(--color-accent)'
+              : c.diffStatus === 'added'
+                ? 'var(--color-diff-add)'
+                : c.diffStatus === 'removed'
+                  ? 'var(--color-hotspot-text)'
+                  : 'var(--color-connector)'
             return (
               <g key={c.id}>
-                <path d={d} fill="none" stroke={selected ? 'var(--color-accent)' : 'var(--color-connector)'} strokeWidth={1.5} strokeLinecap="round" />
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                  strokeDasharray={c.diffStatus === 'removed' ? '4 3' : undefined}
+                />
                 {/* Wide invisible twin so the 1.5px line is clickable. */}
                 <path
                   d={d}
@@ -251,7 +271,7 @@ export function Canvas({
                   className="pointer-events-auto cursor-pointer"
                   onPointerDown={(e) => {
                     e.stopPropagation()
-                    onSelect({ type: 'connection', id: c.id })
+                    onSelect?.({ type: 'connection', id: c.id })
                   }}
                 />
               </g>
@@ -266,14 +286,14 @@ export function Canvas({
           <div
             key={b.id}
             data-block-id={b.id}
-            className={`pointer-events-auto absolute ${dragPos?.id === b.id ? 'cursor-grabbing' : 'cursor-grab'}`}
+            className={`pointer-events-auto absolute ${onMoveBlock ? (dragPos?.id === b.id ? 'cursor-grabbing' : 'cursor-grab') : onSelect ? 'cursor-pointer' : ''}`}
             style={{ left: b.x, top: b.y }}
             onPointerDown={(e) => {
-              if (e.button !== 0) return
+              if (e.button !== 0 || !onSelect) return
               e.stopPropagation()
               capture(e)
               onSelect({ type: 'block', id: b.id })
-              gesture.current = { type: 'drag', id: b.id, start: { x: e.clientX, y: e.clientY }, origin: { x: b.x, y: b.y }, moved: false }
+              if (onMoveBlock) gesture.current = { type: 'drag', id: b.id, start: { x: e.clientX, y: e.clientY }, origin: { x: b.x, y: b.y }, moved: false }
             }}
           >
             <BlockCard
@@ -281,14 +301,18 @@ export function Canvas({
               title={b.title}
               actor={b.actor}
               hotspots={b.hotspots}
+              diffStatus={b.diffStatus}
               selected={selection?.type === 'block' && selection.id === b.id}
-              onConnectStart={(e) => {
-                if (e.button !== 0) return
-                e.stopPropagation()
-                capture(e)
-                gesture.current = { type: 'connect', sourceId: b.id }
-                setPending({ sourceId: b.id, to: toWorld(e.clientX, e.clientY) })
-              }}
+              onConnectStart={
+                onConnect &&
+                ((e) => {
+                  if (e.button !== 0) return
+                  e.stopPropagation()
+                  capture(e)
+                  gesture.current = { type: 'connect', sourceId: b.id }
+                  setPending({ sourceId: b.id, to: toWorld(e.clientX, e.clientY) })
+                })
+              }
             />
           </div>
         ))}

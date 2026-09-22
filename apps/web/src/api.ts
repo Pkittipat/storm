@@ -62,6 +62,9 @@ export interface ProcessDiff {
   patch?: string
   additions?: number
   deletions?: number
+  /** The file's text on `main` and on the current user's branch, for a block-level diff view. */
+  beforeYaml?: string
+  afterYaml?: string
 }
 
 export const api = {
