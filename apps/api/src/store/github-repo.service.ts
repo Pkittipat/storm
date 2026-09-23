@@ -36,12 +36,18 @@ interface Target {
  * Every read/write also takes a `ref` (branch name); callers default to `MAIN` for the
  * agreed state and use a per-user branch for in-progress edits.
  */
+const TARGET_CACHE_MS = 30_000;
+
 @Injectable()
 export class GithubRepo {
   private appPromise: Promise<App> | null = null;
   // Installation octokit clients are cheap to keep around for the process lifetime — each
   // covers one repo, and there's at most a handful of projects open at once.
   private readonly octokitByInstallation = new Map<string, Promise<Octokit>>();
+  // Which repo a project resolves to rarely changes and every store call needs it, so a
+  // short-lived cache saves a Prisma round trip per call — 30s keeps a freshly-connected
+  // project showing up promptly without adding real staleness risk.
+  private readonly targetCache = new Map<string, { target: Promise<Target>; expiresAt: number }>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -66,7 +72,17 @@ export class GithubRepo {
     return client;
   }
 
-  private async target(projectId: string | null): Promise<Target> {
+  private target(projectId: string | null): Promise<Target> {
+    const key = projectId ?? '\0no-project';
+    const cached = this.targetCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.target;
+
+    const target = this.resolveTarget(projectId);
+    this.targetCache.set(key, { target, expiresAt: Date.now() + TARGET_CACHE_MS });
+    return target;
+  }
+
+  private async resolveTarget(projectId: string | null): Promise<Target> {
     const link = projectId ? await this.prisma.githubInstallation.findUnique({ where: { projectId } }) : null;
     if (link) return { owner: link.owner, repo: link.repo, octokit: await this.octokitFor(link.installationId) };
 

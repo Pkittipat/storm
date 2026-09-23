@@ -158,13 +158,20 @@ export class ProcessStore {
 
   /** Every process file, as `{ id, projectId, path }`, projects first in project order. */
   private async files(): Promise<{ id: string; projectId: string | null; path: string }[]> {
-    const out: { id: string; projectId: string | null; path: string }[] = [];
-    for (const projectId of [...(await this.listProjects()).map((p) => p.id), null]) {
-      const dir = this.processesDir(projectId);
-      for (const file of await this.github.listFiles(projectId, dir))
-        if (file.name.endsWith('.yaml')) out.push({ id: basename(file.name, '.yaml'), projectId, path: `${dir}/${file.name}` });
-    }
-    return out;
+    const projectIds = [...(await this.listProjects()).map((p) => p.id), null];
+    // One real GitHub round trip per project — run them together instead of one at a time,
+    // since this runs on every process open/save/create and a sequential loop would pay
+    // network latency N times over for N projects.
+    const perProject = await Promise.all(
+      projectIds.map(async (projectId) => {
+        const dir = this.processesDir(projectId);
+        const files = await this.github.listFiles(projectId, dir);
+        return files
+          .filter((f) => f.name.endsWith('.yaml'))
+          .map((f) => ({ id: basename(f.name, '.yaml'), projectId, path: `${dir}/${f.name}` }));
+      }),
+    );
+    return perProject.flat();
   }
 
   private async locate(id: string) {
