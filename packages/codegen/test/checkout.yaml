@@ -1,0 +1,35 @@
+schemaVersion: 1
+id: checkout
+name: Checkout
+
+blocks:
+  - id: cart
+    kind: readmodel
+    title: Cart
+    fields:
+      - { name: cartId, type: string }
+      - { name: items, type: "CartItem[]" }
+  - id: place-order
+    kind: command
+    title: Place order
+    actor: Customer
+    hotspots:
+      - What if the cart is empty?
+    fields:
+      - { name: cartId, type: string }
+      - { name: shippingAddress, type: Address }
+  - { id: order, kind: aggregate, title: Order }
+  - { id: order-placed, kind: event, title: Order placed }
+  - { id: ship-when-placed, kind: policy, title: Ship when order placed }
+  - { id: ship-order, kind: command, title: Ship order, actor: Warehouse }
+  - { id: shipment, kind: aggregate, title: Shipment }
+  - { id: order-shipped, kind: event, title: Order shipped }
+
+connections:
+  - { from: cart, to: place-order }
+  - { from: place-order, to: order }
+  - { from: order, to: order-placed }
+  - { from: order-placed, to: ship-when-placed }
+  - { from: ship-when-placed, to: ship-order }
+  - { from: ship-order, to: shipment }
+  - { from: shipment, to: order-shipped }

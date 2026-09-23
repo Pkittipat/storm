@@ -16,7 +16,8 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "codegen": "pnpm --filter @stormm/codegen generate"
   },
   "devDependencies": {
     "prettier": "^3.3.3"

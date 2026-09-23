@@ -1,0 +1,32 @@
+{
+  "name": "@stormm/codegen",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Stormm process model -> Go domain code (aggregates, events, commands, repository ports, hook stubs).",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "generate": "pnpm --filter @stormm/process-model build && tsc -p tsconfig.build.json && node dist/cli.js"
+  },
+  "dependencies": {
+    "@stormm/process-model": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.2"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}
