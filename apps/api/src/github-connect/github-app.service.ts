@@ -26,14 +26,11 @@ export class GithubAppClient {
     return this.appPromise;
   }
 
-  /** The single repo an installation was granted access to; throws if it's zero or several — connect expects exactly one. */
-  async repoForInstallation(installationId: string): Promise<{ owner: string; repo: string }> {
+  /** Every repo an installation was granted access to — one per Stormm project, but the person installing picks, so it isn't always exactly one. */
+  async reposForInstallation(installationId: string): Promise<{ owner: string; repo: string }[]> {
     const app = await this.app();
     const octokit = await app.getInstallationOctokit(Number(installationId));
     const { data } = await octokit.rest.apps.listReposAccessibleToInstallation();
-    if (data.repositories.length !== 1)
-      throw new Error(`Installation ${installationId} has access to ${data.repositories.length} repos; expected exactly 1`);
-    const [repository] = data.repositories;
-    return { owner: repository.owner.login, repo: repository.name };
+    return data.repositories.map((r) => ({ owner: r.owner.login, repo: r.name }));
   }
 }

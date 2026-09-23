@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query, Redirect } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Redirect } from '@nestjs/common';
+import { ChooseRepoDto } from './dto.js';
 import { GithubConnectService } from './github-connect.service.js';
 
 @Controller()
@@ -12,13 +13,32 @@ export class GithubConnectController {
     return { url: this.connect.startConnect(id) };
   }
 
-  /** Where GitHub sends the browser back to after the person installs (or cancels) the App. */
+  /**
+   * Where GitHub sends the browser back to after the person installs, updates, or cancels
+   * the App. `setup_action` is `install` for a brand new installation or `update` when the
+   * App (or its repo access) was already installed and they changed something — both mean
+   * "go ahead," only a missing/other value means they backed out.
+   */
   @Get('github/callback')
   @Redirect()
   async callback(@Query('installation_id') installationId?: string, @Query('state') state?: string, @Query('setup_action') setupAction?: string) {
     const frontend = process.env.CORS_ORIGIN ?? '';
-    if (setupAction !== 'install' || !installationId || !state) return { url: `${frontend}/#/?github=cancelled` };
-    const projectId = await this.connect.completeConnect(installationId, state);
-    return { url: `${frontend}/#/?github=connected&project=${projectId}` };
+    if ((setupAction !== 'install' && setupAction !== 'update') || !installationId || !state)
+      return { url: `${frontend}/#/?github=cancelled` };
+
+    const result = await this.connect.completeConnect(installationId, state);
+    if (result.status === 'connected') return { url: `${frontend}/#/?github=connected&project=${result.projectId}` };
+
+    const repos = result.repos.map((r) => `${r.owner}/${r.repo}`).join(',');
+    return {
+      url: `${frontend}/#/?github=choose&project=${result.projectId}&installation=${result.installationId}&repos=${encodeURIComponent(repos)}`,
+    };
+  }
+
+  /** Finishes a connect that needed a repo choice (the installation covers more than one). */
+  @Post('projects/:id/github/repo')
+  @HttpCode(204)
+  chooseRepo(@Param('id') id: string, @Body() dto: ChooseRepoDto) {
+    return this.connect.chooseRepo(id, dto.installationId, dto.owner, dto.repo);
   }
 }

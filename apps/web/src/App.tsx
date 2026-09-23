@@ -89,6 +89,39 @@ function App() {
     api.listProjects().then(setProjects, fail)
   }, [fail])
 
+  // Back from the GitHub install screen: #/?github=connected|cancelled[&project=<id>], or
+  // #/?github=choose&project=<id>&installation=<id>&repos=<owner/repo,...> when the
+  // installation covers more than one repo and GitHub gave us no way to pre-pick just one.
+  // Only ever runs once — the "no process in the URL" effect below overwrites the hash next.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
+    const status = params.get('github')
+    if (!status) return
+    if (status === 'connected') {
+      setNotice({ text: 'Connected to GitHub' })
+    } else if (status === 'choose') {
+      const projectId = params.get('project')
+      const installationId = params.get('installation')
+      const repos = params.get('repos')?.split(',') ?? []
+      if (!projectId || !installationId || repos.length === 0) {
+        setNotice({ text: 'GitHub connection failed', error: true })
+        return
+      }
+      const choice = window.prompt(`This installation covers more than one repo. Which one is this project?\n\n${repos.join('\n')}`, repos[0])
+      const [owner, repo] = (choice ?? '').split('/')
+      if (!owner || !repo || !repos.includes(choice!)) {
+        setNotice({ text: 'GitHub connection cancelled', error: true })
+        return
+      }
+      api.chooseGithubRepo(projectId, installationId, owner, repo).then(
+        () => setNotice({ text: 'Connected to GitHub' }),
+        fail,
+      )
+    } else {
+      setNotice({ text: 'GitHub connection cancelled', error: true })
+    }
+  }, [fail])
+
   const toggleSidebar = (hidden: boolean) => {
     setSidebarHidden(hidden)
     try {
@@ -326,6 +359,11 @@ function App() {
     }
   }
 
+  /** Sends the browser to GitHub's own install screen; GitHub redirects back once done. */
+  const connectGithub = (projectId: string) => {
+    window.location.href = `/api/projects/${projectId}/github/connect`
+  }
+
   const deleteProcess = async () => {
     if (!board || !window.confirm(`Delete “${board.name}” and its YAML file?`)) return
     try {
@@ -423,6 +461,7 @@ function App() {
             onNewProject={createProject}
             onRenameProject={renameProject}
             onDeleteProject={deleteProject}
+            onConnectGithub={connectGithub}
           />
         </Sidebar>
       )}

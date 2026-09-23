@@ -85,4 +85,7 @@ export const api = {
   createProject: (name: string) => request<Project>('POST', '/projects', { name }),
   renameProject: (id: string, name: string) => request<Project>('PATCH', `/projects/${id}`, { name }),
   deleteProject: (id: string) => request<void>('DELETE', `/projects/${id}`),
+  /** Finishes a Connect GitHub that needed a repo choice (the installation covered more than one). */
+  chooseGithubRepo: (projectId: string, installationId: string, owner: string, repo: string) =>
+    request<void>('POST', `/projects/${projectId}/github/repo`, { installationId, owner, repo }),
 }
