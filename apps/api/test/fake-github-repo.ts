@@ -12,6 +12,9 @@ class GithubApiError extends Error {
  * In-memory stand-in for GithubRepo, so e2e tests can exercise ProcessStore
  * without hitting a real GitHub repo. Mirrors the Contents/Git API semantics
  * ProcessStore relies on: blob SHAs, per-branch content, and merge/diff between them.
+ *
+ * Every method takes a leading `projectId` to match GithubRepo's signature, but this
+ * fake keeps one shared store regardless — these tests don't exercise per-project repos.
  */
 export class FakeGithubRepo {
   // branch -> path -> text. Branches other than `main` start as a shallow copy of
@@ -28,12 +31,12 @@ export class FakeGithubRepo {
   }
 
   /** Like a real 404 from GitHub: a missing branch reads the same as a missing file. */
-  async readFile(path: string, ref: string = MAIN): Promise<{ text: string; sha: string } | null> {
+  async readFile(_projectId: string | null, path: string, ref: string = MAIN): Promise<{ text: string; sha: string } | null> {
     const text = this.branches.get(ref)?.get(path);
     return text === undefined ? null : { text, sha: blobSha(text) };
   }
 
-  async listFiles(path: string, ref: string = MAIN): Promise<{ name: string; sha: string }[]> {
+  async listFiles(_projectId: string | null, path: string, ref: string = MAIN): Promise<{ name: string; sha: string }[]> {
     const prefix = `${path}/`;
     const files = this.branches.get(ref);
     if (!files) return [];
@@ -42,7 +45,12 @@ export class FakeGithubRepo {
       .map((p) => ({ name: p.slice(prefix.length), sha: blobSha(files.get(p)!) }));
   }
 
-  async writeFile(path: string, text: string, opts: { sha?: string; message: string; branch?: string }): Promise<string> {
+  async writeFile(
+    _projectId: string | null,
+    path: string,
+    text: string,
+    opts: { sha?: string; message: string; branch?: string },
+  ): Promise<string> {
     const files = this.files(opts.branch ?? MAIN);
     const current = files.get(path);
     if (opts.sha !== undefined && (current === undefined || blobSha(current) !== opts.sha))
@@ -51,38 +59,38 @@ export class FakeGithubRepo {
     return blobSha(text);
   }
 
-  async deleteFile(path: string, sha: string, _message: string, branch: string = MAIN): Promise<void> {
+  async deleteFile(_projectId: string | null, path: string, sha: string, _message: string, branch: string = MAIN): Promise<void> {
     const files = this.files(branch);
     const current = files.get(path);
     if (current === undefined || blobSha(current) !== sha) throw new GithubApiError(409, 'sha does not match current file');
     files.delete(path);
   }
 
-  async branchSha(branch: string): Promise<string | null> {
+  async branchSha(_projectId: string | null, branch: string): Promise<string | null> {
     return this.branches.has(branch) ? branch : null; // a fake "commit sha", just an opaque non-null marker
   }
 
-  async createBranch(branch: string): Promise<void> {
+  async createBranch(_projectId: string | null, branch: string): Promise<void> {
     this.branches.set(branch, new Map(this.files(MAIN)));
   }
 
-  async ensureBranch(branch: string): Promise<string> {
-    if (!this.branches.has(branch)) await this.createBranch(branch);
-    return (await this.branchSha(branch))!;
+  async ensureBranch(projectId: string | null, branch: string): Promise<string> {
+    if (!this.branches.has(branch)) await this.createBranch(projectId, branch);
+    return (await this.branchSha(projectId, branch))!;
   }
 
-  async deleteBranch(branch: string): Promise<void> {
+  async deleteBranch(_projectId: string | null, branch: string): Promise<void> {
     this.branches.delete(branch);
   }
 
-  async diffFile(base: string, head: string, path: string) {
+  async diffFile(_projectId: string | null, base: string, head: string, path: string) {
     const before = this.files(base).get(path);
     const after = this.files(head).get(path);
     if (before === after) return null;
     return { status: 'modified' as const, patch: `--- ${path}\n+++ ${path}\n(fake diff)`, additions: 0, deletions: 0 };
   }
 
-  async merge(base: string, head: string): Promise<'merged' | 'up-to-date' | 'conflict'> {
+  async merge(_projectId: string | null, base: string, head: string): Promise<'merged' | 'up-to-date' | 'conflict'> {
     const baseFiles = this.files(base);
     const headFiles = this.files(head);
     let changed = false;
@@ -96,12 +104,12 @@ export class FakeGithubRepo {
     return changed ? 'merged' : 'up-to-date';
   }
 
-  async findOpenPullRequest(base: string, head: string): Promise<{ number: number } | null> {
+  async findOpenPullRequest(_projectId: string | null, base: string, head: string): Promise<{ number: number } | null> {
     const number = this.openPulls.get(`${base}->${head}`);
     return number === undefined ? null : { number };
   }
 
-  async openPullRequest(base: string, head: string): Promise<{ number: number }> {
+  async openPullRequest(_projectId: string | null, base: string, head: string): Promise<{ number: number }> {
     const key = `${base}->${head}`;
     const existing = this.openPulls.get(key);
     if (existing !== undefined) return { number: existing };

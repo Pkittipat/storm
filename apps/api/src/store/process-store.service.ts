@@ -143,12 +143,12 @@ export class ProcessStore {
     return this.exclusive(async () => {
       const projects = await this.listProjects();
       if (!projects.some((p) => p.id === id)) throw new NotFoundException(`Project ${id} not found`);
-      for (const file of await this.github.listFiles(this.processesDir(id))) {
-        const { text } = (await this.github.readFile(`${this.processesDir(id)}/${file.name}`))!;
-        await this.github.writeFile(this.processPath(null, basename(file.name, '.yaml')), text, {
+      for (const file of await this.github.listFiles(id, this.processesDir(id))) {
+        const { text } = (await this.github.readFile(id, `${this.processesDir(id)}/${file.name}`))!;
+        await this.github.writeFile(null, this.processPath(null, basename(file.name, '.yaml')), text, {
           message: `Move ${file.name} out of ${id} (project deleted)`,
         });
-        await this.github.deleteFile(`${this.processesDir(id)}/${file.name}`, file.sha, `Move ${file.name} out of ${id} (project deleted)`);
+        await this.github.deleteFile(id, `${this.processesDir(id)}/${file.name}`, file.sha, `Move ${file.name} out of ${id} (project deleted)`);
       }
       await this.saveProjects(projects.filter((p) => p.id !== id));
     });
@@ -161,7 +161,7 @@ export class ProcessStore {
     const out: { id: string; projectId: string | null; path: string }[] = [];
     for (const projectId of [...(await this.listProjects()).map((p) => p.id), null]) {
       const dir = this.processesDir(projectId);
-      for (const file of await this.github.listFiles(dir))
+      for (const file of await this.github.listFiles(projectId, dir))
         if (file.name.endsWith('.yaml')) out.push({ id: basename(file.name, '.yaml'), projectId, path: `${dir}/${file.name}` });
     }
     return out;
@@ -177,7 +177,7 @@ export class ProcessStore {
     const files = await this.files();
     return Promise.all(
       files.map(async ({ id, projectId, path }) => {
-        const { text } = (await this.github.readFile(path))!;
+        const { text } = (await this.github.readFile(projectId, path))!;
         const { board } = parseBoard(text);
         return board ? { id, name: board.name, projectId } : { id, name: id, projectId, broken: true };
       }),
@@ -188,8 +188,8 @@ export class ProcessStore {
   async getProcess(id: string, userId: string): Promise<ProcessFile> {
     const { projectId, path } = await this.locate(id);
     const branch = this.userBranch(userId);
-    const onBranch = await this.github.readFile(path, branch);
-    const { text, sha } = onBranch ?? (await this.github.readFile(path))!;
+    const onBranch = await this.github.readFile(projectId, path, branch);
+    const { text, sha } = onBranch ?? (await this.github.readFile(projectId, path))!;
     const { board, issues } = parseBoard(text);
     if (!board) throw new UnprocessableEntityException({ message: `${id}.yaml can't be read as a process`, issues });
     return { projectId, board, version: sha, issues: [...issues, ...validate(board), ...fileNameIssues(id, board)] };
@@ -201,7 +201,7 @@ export class ProcessStore {
         throw new BadRequestException(`Project ${projectId} not found`);
       const board = newBoard(name, (await this.files()).map((f) => f.id));
       const text = toYaml(board);
-      const sha = await this.github.writeFile(this.processPath(projectId, board.id), text, {
+      const sha = await this.github.writeFile(projectId, this.processPath(projectId, board.id), text, {
         message: `Create ${board.id}`,
       });
       return { projectId, board, version: sha, issues: validate(board) };
@@ -223,14 +223,14 @@ export class ProcessStore {
       if (hasErrors(all)) throw new UnprocessableEntityException({ message: 'The process has errors', issues: all });
 
       const branch = this.userBranch(userId);
-      await this.github.ensureBranch(branch);
+      await this.github.ensureBranch(projectId, branch);
       const text = toYaml(board);
       try {
-        const sha = await this.github.writeFile(path, text, { sha: baseVersion, message: `Update ${id}`, branch });
+        const sha = await this.github.writeFile(projectId, path, text, { sha: baseVersion, message: `Update ${id}`, branch });
         return { projectId, board, version: sha, issues: all };
       } catch (e) {
         if (isConflict(e)) {
-          const current = await this.github.readFile(path, branch);
+          const current = await this.github.readFile(projectId, path, branch);
           throw new ConflictException({ message: 'The process changed since you loaded it', version: current?.sha });
         }
         throw e;
@@ -241,15 +241,15 @@ export class ProcessStore {
   /** The diff between the user's in-progress edit and the agreed version on `main`. */
   diffProcess(id: string, userId: string): Promise<ProcessDiff> {
     return this.exclusive(async () => {
-      const { path } = await this.locate(id);
+      const { projectId, path } = await this.locate(id);
       const branch = this.userBranch(userId);
-      if (!(await this.github.branchSha(branch))) return { hasChanges: false, requested: false };
-      const diff = await this.github.diffFile(MAIN, branch, path);
+      if (!(await this.github.branchSha(projectId, branch))) return { hasChanges: false, requested: false };
+      const diff = await this.github.diffFile(projectId, MAIN, branch, path);
       if (!diff) return { hasChanges: false, requested: false };
       const [requested, before, after] = await Promise.all([
-        this.github.findOpenPullRequest(MAIN, branch).then((pr) => pr !== null),
-        this.github.readFile(path, MAIN),
-        this.github.readFile(path, branch),
+        this.github.findOpenPullRequest(projectId, MAIN, branch).then((pr) => pr !== null),
+        this.github.readFile(projectId, path, MAIN),
+        this.github.readFile(projectId, path, branch),
       ]);
       return {
         hasChanges: true,
@@ -270,34 +270,34 @@ export class ProcessStore {
    */
   requestChange(id: string, userId: string): Promise<void> {
     return this.exclusive(async () => {
-      const { path } = await this.locate(id);
+      const { projectId, path } = await this.locate(id);
       const branch = this.userBranch(userId);
-      if (!(await this.github.branchSha(branch))) throw new BadRequestException(`No changes from ${userId} to request for ${id}`);
-      const diff = await this.github.diffFile(MAIN, branch, path);
+      if (!(await this.github.branchSha(projectId, branch))) throw new BadRequestException(`No changes from ${userId} to request for ${id}`);
+      const diff = await this.github.diffFile(projectId, MAIN, branch, path);
       if (!diff) throw new BadRequestException(`No changes from ${userId} to request for ${id}`);
-      await this.github.openPullRequest(MAIN, branch, `Update ${id} (from ${userId})`);
+      await this.github.openPullRequest(projectId, MAIN, branch, `Update ${id} (from ${userId})`);
     });
   }
 
   /** Merges the user's branch into `main`, making their edit the agreed version. Refuses until it's been requested. */
   acceptProcess(id: string, userId: string): Promise<ProcessFile> {
     return this.exclusive(async () => {
-      const { path } = await this.locate(id);
+      const { projectId, path } = await this.locate(id);
       const branch = this.userBranch(userId);
-      if (!(await this.github.branchSha(branch)))
+      if (!(await this.github.branchSha(projectId, branch)))
         throw new BadRequestException(`No changes from ${userId} to accept for ${id}`);
-      if (!(await this.github.findOpenPullRequest(MAIN, branch)))
+      if (!(await this.github.findOpenPullRequest(projectId, MAIN, branch)))
         throw new BadRequestException(`${userId}'s change hasn't been requested for review yet`);
 
-      const result = await this.github.merge(MAIN, branch, `Accept ${id} changes from ${userId}`);
+      const result = await this.github.merge(projectId, MAIN, branch, `Accept ${id} changes from ${userId}`);
       if (result === 'conflict')
         throw new ConflictException({ message: `${id} changed on main since this edit was based; reload and redo the edit` });
 
-      const { text, sha } = (await this.github.readFile(path))!;
+      const { text, sha } = (await this.github.readFile(projectId, path))!;
       const { board, issues } = parseBoard(text);
       if (!board) throw new UnprocessableEntityException({ message: `${id}.yaml can't be read as a process`, issues });
       return {
-        projectId: (await this.locate(id)).projectId,
+        projectId,
         board,
         version: sha,
         issues: [...issues, ...validate(board), ...fileNameIssues(id, board)],
@@ -312,12 +312,12 @@ export class ProcessStore {
         throw new BadRequestException(`Project ${projectId} not found`);
       let text: string;
       if (found.projectId !== projectId) {
-        const file = (await this.github.readFile(found.path))!;
+        const file = (await this.github.readFile(found.projectId, found.path))!;
         text = file.text;
-        await this.github.writeFile(this.processPath(projectId, id), text, { message: `Move ${id} to ${projectId ?? 'no project'}` });
-        await this.github.deleteFile(found.path, file.sha, `Move ${id} to ${projectId ?? 'no project'}`);
+        await this.github.writeFile(projectId, this.processPath(projectId, id), text, { message: `Move ${id} to ${projectId ?? 'no project'}` });
+        await this.github.deleteFile(found.projectId, found.path, file.sha, `Move ${id} to ${projectId ?? 'no project'}`);
       } else {
-        text = (await this.github.readFile(found.path))!.text;
+        text = (await this.github.readFile(found.projectId, found.path))!.text;
       }
       const { board } = parseBoard(text);
       return { id, name: board?.name ?? id, projectId };
@@ -326,9 +326,9 @@ export class ProcessStore {
 
   deleteProcess(id: string): Promise<void> {
     return this.exclusive(async () => {
-      const { path } = await this.locate(id);
-      const file = (await this.github.readFile(path))!;
-      await this.github.deleteFile(path, file.sha, `Delete ${id}`);
+      const { projectId, path } = await this.locate(id);
+      const file = (await this.github.readFile(projectId, path))!;
+      await this.github.deleteFile(projectId, path, file.sha, `Delete ${id}`);
     });
   }
 }
