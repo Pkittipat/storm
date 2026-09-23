@@ -23,8 +23,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "build:model": "pnpm --filter @stormm/process-model build",
-    "export:db": "pnpm build:model && node --env-file=.env scripts/export-db-to-yaml.ts"
+    "build:model": "pnpm --filter @stormm/process-model build"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
