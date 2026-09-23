@@ -359,24 +359,25 @@ function App() {
     }
   }
 
-  /** Sends the browser to GitHub's own install screen; GitHub redirects back once done. */
-  const connectGithub = (projectId: string) => {
-    window.location.href = `/api/projects/${projectId}/github/connect`
-  }
-
   /**
-   * Reuses an installation already linked to some other project, skipping GitHub entirely.
-   * GitHub's install screen only shows a confirm step when there's an actual change to grant —
-   * if the installation already has the repo this project needs, going through GitHub again
-   * just strands you on its settings page with no way back. This asks locally instead.
+   * One "Connect GitHub" action that figures out the right path itself: if any GitHub
+   * installation is already known (linked to some other project), asks whether to reuse
+   * one — GitHub's own install screen only shows a confirm step when there's an actual
+   * new grant to make, so re-running it when the access already exists just strands the
+   * browser on GitHub's settings page with no way back. New repo access still goes
+   * through GitHub for real; reusing an existing one is resolved locally instead.
    */
-  const connectExistingGithub = async (projectId: string) => {
+  const connectGithub = async (projectId: string) => {
     try {
       const installations = await api.listGithubInstallations()
-      if (installations.length === 0) {
-        window.alert('No existing GitHub connections yet — use "Connect GitHub" for a new one.')
+      const useExisting =
+        installations.length > 0 &&
+        window.confirm('Use an already-connected GitHub repo for this project? Cancel to connect a new one instead.')
+      if (!useExisting) {
+        window.location.href = `/api/projects/${projectId}/github/connect`
         return
       }
+
       const installationId =
         installations.length === 1
           ? installations[0].installationId
@@ -502,7 +503,6 @@ function App() {
             onRenameProject={renameProject}
             onDeleteProject={deleteProject}
             onConnectGithub={connectGithub}
-            onConnectExistingGithub={connectExistingGithub}
           />
         </Sidebar>
       )}

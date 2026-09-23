@@ -42,7 +42,6 @@ interface ProcessNavProps {
   onRenameProject: (id: string, name: string) => void
   onDeleteProject: (project: Project) => void
   onConnectGithub: (projectId: string) => void
-  onConnectExistingGithub: (projectId: string) => void
 }
 
 /**
@@ -63,7 +62,6 @@ export function ProcessNav({
   onRenameProject,
   onDeleteProject,
   onConnectGithub,
-  onConnectExistingGithub,
 }: ProcessNavProps) {
   const [collapsed, setCollapsed] = useState(() => new Set(stored<string[]>('stormm.collapsedProjects', [])))
   const [sort, setSort] = useState<Sort>(() => stored<Sort>('stormm.processSort', 'created'))
@@ -250,12 +248,11 @@ export function ProcessNav({
       {processes && searching && !groups.length && !loose.length && <Empty>No matches</Empty>}
 
       {projectContext && (
-        <FloatingMenu {...projectContext} label={`${projectContext.project.name} options`} rows={4} onClose={closeProjectContext}>
+        <FloatingMenu {...projectContext} label={`${projectContext.project.name} options`} rows={3} onClose={closeProjectContext}>
           {(pick) => (
             <>
               <MenuItem onClick={pick(() => setRenamingId(projectContext.project.id))}>Rename</MenuItem>
               <MenuItem onClick={pick(() => onConnectGithub(projectContext.project.id))}>Connect GitHub</MenuItem>
-              <MenuItem onClick={pick(() => onConnectExistingGithub(projectContext.project.id))}>Connect to existing repo</MenuItem>
               <MenuItem danger onClick={pick(() => onDeleteProject(projectContext.project))}>
                 Delete project
               </MenuItem>
