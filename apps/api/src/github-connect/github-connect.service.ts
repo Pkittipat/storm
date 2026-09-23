@@ -69,6 +69,27 @@ export class GithubConnectService {
     await this.link(projectId, installationId, { owner, repo });
   }
 
+  /**
+   * Installations already linked to some other Stormm project — reusing one skips GitHub's
+   * install screen entirely, which matters because GitHub only shows that screen when
+   * there's actually a change to grant. If the installation already has the access a
+   * second project needs, re-running the GitHub flow silently drops you on its settings
+   * page instead (no `state`, no way back to us) rather than letting you just pick a repo.
+   */
+  async knownInstallations(): Promise<{ installationId: string; owner: string }[]> {
+    const rows = await this.prisma.githubInstallation.findMany({
+      distinct: ['installationId'],
+      select: { installationId: true, owner: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows;
+  }
+
+  /** Every repo a known installation actually has access to right now (live from GitHub, not cached). */
+  reposForInstallation(installationId: string): Promise<{ owner: string; repo: string }[]> {
+    return this.githubApp.reposForInstallation(installationId);
+  }
+
   private async link(projectId: string, installationId: string, repo: { owner: string; repo: string }): Promise<void> {
     await this.prisma.githubInstallation.upsert({
       where: { projectId },

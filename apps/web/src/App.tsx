@@ -364,6 +364,46 @@ function App() {
     window.location.href = `/api/projects/${projectId}/github/connect`
   }
 
+  /**
+   * Reuses an installation already linked to some other project, skipping GitHub entirely.
+   * GitHub's install screen only shows a confirm step when there's an actual change to grant —
+   * if the installation already has the repo this project needs, going through GitHub again
+   * just strands you on its settings page with no way back. This asks locally instead.
+   */
+  const connectExistingGithub = async (projectId: string) => {
+    try {
+      const installations = await api.listGithubInstallations()
+      if (installations.length === 0) {
+        window.alert('No existing GitHub connections yet — use "Connect GitHub" for a new one.')
+        return
+      }
+      const installationId =
+        installations.length === 1
+          ? installations[0].installationId
+          : (() => {
+              const options = installations.map((i) => `${i.installationId} (${i.owner})`)
+              const choice = window.prompt(`Which installation?\n\n${options.join('\n')}`, options[0])
+              return installations.find((i) => `${i.installationId} (${i.owner})` === choice)?.installationId ?? null
+            })()
+      if (!installationId) return
+
+      const repos = await api.listGithubRepos(installationId)
+      if (repos.length === 0) {
+        window.alert('That installation has no repos accessible to it right now.')
+        return
+      }
+      const names = repos.map((r) => `${r.owner}/${r.repo}`)
+      const choice = repos.length === 1 ? names[0] : window.prompt(`Which repo?\n\n${names.join('\n')}`, names[0])
+      const picked = repos.find((r) => `${r.owner}/${r.repo}` === choice)
+      if (!picked) return
+
+      await api.chooseGithubRepo(projectId, installationId, picked.owner, picked.repo)
+      setNotice({ text: 'Connected to GitHub' })
+    } catch (e) {
+      fail(e)
+    }
+  }
+
   const deleteProcess = async () => {
     if (!board || !window.confirm(`Delete “${board.name}” and its YAML file?`)) return
     try {
@@ -462,6 +502,7 @@ function App() {
             onRenameProject={renameProject}
             onDeleteProject={deleteProject}
             onConnectGithub={connectGithub}
+            onConnectExistingGithub={connectExistingGithub}
           />
         </Sidebar>
       )}

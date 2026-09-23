@@ -88,4 +88,8 @@ export const api = {
   /** Finishes a Connect GitHub that needed a repo choice (the installation covered more than one). */
   chooseGithubRepo: (projectId: string, installationId: string, owner: string, repo: string) =>
     request<void>('POST', `/projects/${projectId}/github/repo`, { installationId, owner, repo }),
+  /** Installations already linked to some other project, for "connect to existing" instead of going through GitHub again. */
+  listGithubInstallations: () => request<{ installationId: string; owner: string }[]>('GET', '/github/installations'),
+  /** A known installation's repos, live from GitHub. */
+  listGithubRepos: (installationId: string) => request<{ owner: string; repo: string }[]>('GET', `/github/installations/${installationId}/repos`),
 }

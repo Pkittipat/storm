@@ -41,4 +41,16 @@ export class GithubConnectController {
   chooseRepo(@Param('id') id: string, @Body() dto: ChooseRepoDto) {
     return this.connect.chooseRepo(id, dto.installationId, dto.owner, dto.repo);
   }
+
+  /** Installations already linked to some other project — lets a new project reuse one without going through GitHub again. */
+  @Get('github/installations')
+  listInstallations() {
+    return this.connect.knownInstallations();
+  }
+
+  /** A known installation's repos, live from GitHub, for the "connect to existing" picker. */
+  @Get('github/installations/:installationId/repos')
+  listRepos(@Param('installationId') installationId: string) {
+    return this.connect.reposForInstallation(installationId);
+  }
 }
