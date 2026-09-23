@@ -161,6 +161,14 @@ function App() {
   const issues = useMemo(() => (board ? validate(board) : []), [board])
   const yaml = useMemo(() => (board ? toYaml(board) : ''), [board])
 
+  // The open process's name is live (edited in the header) before the list is refetched.
+  // Memoized so panning/dragging on the canvas (which re-renders App on every settle/frame)
+  // doesn't force the whole sidebar to re-sort and re-render along with it.
+  const sidebarProcesses = useMemo(
+    () => processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null,
+    [processes, board?.id, board?.name],
+  )
+
   // Parses the diff's before/after YAML into boards for the review view; falls back to
   // the raw text patch (rendered by ChangesList) if either side doesn't parse.
   const diffPreview = useMemo(() => {
@@ -493,8 +501,7 @@ function App() {
       {!sidebarHidden && (
         <Sidebar userInitial="F" userName="Fang" onCollapse={() => toggleSidebar(true)}>
           <ProcessNav
-            // The open process's name is live (edited in the header) before the list is refetched.
-            processes={processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null}
+            processes={sidebarProcesses}
             projects={projects}
             activeId={processId}
             onNewProcess={createProcess}
