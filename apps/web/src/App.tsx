@@ -15,7 +15,7 @@ import {
 } from '@stormm/process-model'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, type CanvasBlock, type CanvasConnection, type Selection, type Viewport } from './canvas/Canvas'
-import { LAYOUT } from './canvas/geometry'
+import { LAYOUT, PORT_Y, snap } from './canvas/geometry'
 import { Inspector } from './canvas/Inspector'
 import { YamlPanel } from './canvas/YamlPanel'
 import { Button, Composer, EditableText, Header, IconButton, Sidebar, blockKindLabel, type BlockKind } from './components'
@@ -202,6 +202,35 @@ function App() {
     setSelection({ type: 'block', id: created })
   }
 
+  /** A wire dropped on empty canvas: a new block of that kind, connected from the source, where the wire ended. */
+  const addConnectedBlock = (from: string, kind: BlockKind, at: { x: number; y: number }) => {
+    let created = ''
+    edit((b) => {
+      const r = addBlockTo(b, { kind, title: `New ${blockKindLabel[kind].toLowerCase()}` })
+      created = r.blockId
+      return connectBlocks(r.board, from, r.blockId)
+    })
+    if (!created) return
+    freshIds().add(created)
+    // The wire's end is the new block's left port.
+    dragged.move(created, { x: snap(at.x), y: snap(at.y - PORT_Y) })
+    setSelection({ type: 'block', id: created })
+  }
+
+  /** Right-click → Add block: an unconnected block of that kind where the canvas was clicked. */
+  const addBlockAt = (kind: BlockKind, at: { x: number; y: number }) => {
+    let created = ''
+    edit((b) => {
+      const r = addBlockTo(b, { kind, title: `New ${blockKindLabel[kind].toLowerCase()}` })
+      created = r.blockId
+      return r.board
+    })
+    if (!created) return
+    freshIds().add(created)
+    dragged.move(created, { x: snap(at.x), y: snap(at.y) })
+    setSelection({ type: 'block', id: created })
+  }
+
   // ── Processes and projects ───────────────────────────────────────────────
 
   const createProcess = (projectId: string | null = null) => {
@@ -385,6 +414,10 @@ function App() {
               onMoveBlock={(id, x, y) => dragged.move(id, { x, y })}
               onConnect={connect}
               onRenameBlock={(id, title) => patchBlock(id, { title })}
+              onConnectToNew={addConnectedBlock}
+              onAddBlockAt={addBlockAt}
+              onDeleteBlock={deleteBlock}
+              onDeleteConnection={deleteConnection}
             >
               {hasDrags && (
                 <div className="absolute top-step-2xl right-step-2xl">

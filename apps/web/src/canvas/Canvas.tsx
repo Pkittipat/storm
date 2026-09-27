@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { BlockCard, ZoomControl, type BlockKind } from '../components'
+import { BLOCK_KINDS } from '@stormm/process-model'
+import { BlockCard, Menu, MenuItem, MenuLabel, TypeSwatch, ZoomControl, blockKindLabel, type BlockKind } from '../components'
 import { BLOCK_HEIGHT, BLOCK_WIDTH, PORT_Y, connectorPath, snap, type Point } from './geometry'
 
 export type Selection = { type: 'block'; id: string } | { type: 'connection'; id: string } | null
@@ -38,8 +39,18 @@ interface CanvasProps {
   onSelect?: (s: Selection) => void
   onMoveBlock?: (id: string, x: number, y: number) => void
   onConnect?: (sourceId: string, targetId: string) => void
+  /**
+   * A wire dropped on empty canvas offers a block menu there; picking a kind adds that block,
+   * connected from the source, with its left port at `at` (world coordinates).
+   */
+  onConnectToNew?: (sourceId: string, kind: BlockKind, at: Point) => void
   /** Double-clicking a block edits its title in place. */
   onRenameBlock?: (id: string, title: string) => void
+  /** Right-click on empty canvas: add an unconnected block with its top-left at `at` (world coordinates). */
+  onAddBlockAt?: (kind: BlockKind, at: Point) => void
+  /** Right-click on a block or connection: delete it. */
+  onDeleteBlock?: (id: string) => void
+  onDeleteConnection?: (id: string) => void
   /** Floating overlays (composer, empty state) rendered above the world, unscaled. */
   children?: ReactNode
 }
@@ -50,7 +61,7 @@ const ZOOM_MAX = 2
 type Gesture =
   | { type: 'pan'; start: Point; origin: Viewport; moved: boolean }
   | { type: 'drag'; id: string; start: Point; origin: Point; moved: boolean }
-  | { type: 'connect'; sourceId: string }
+  | { type: 'connect'; sourceId: string; start: Point }
 
 /** How long the viewport must stay still before it's reported to the parent. */
 const SETTLE_MS = 150
@@ -71,6 +82,10 @@ export function Canvas({
   onMoveBlock,
   onConnect,
   onRenameBlock,
+  onConnectToNew,
+  onAddBlockAt,
+  onDeleteBlock,
+  onDeleteConnection,
   children,
 }: CanvasProps) {
   const ref = useRef<HTMLElement>(null)
@@ -78,6 +93,29 @@ export function Canvas({
   const [dragPos, setDragPos] = useState<{ id: string } & Point | null>(null)
   const [pending, setPending] = useState<{ sourceId: string; to: Point } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  /** The open menu: a wire left on empty canvas waiting for a block kind, or a right-click on the canvas, a block or a connection. */
+  const [menu, setMenu] = useState<(CanvasMenu & { at: Point; bounds: { width: number; height: number } }) | null>(null)
+  const openMenu = (m: CanvasMenu, at: Point) => {
+    const { clientWidth: width, clientHeight: height } = ref.current!
+    setMenu({ ...m, at, bounds: { width, height } })
+  }
+  /** Closes the menu and drops an unfinished wire: a connect drag in progress, or one waiting in the block menu. */
+  const cancelWire = () => {
+    if (gesture.current?.type === 'connect') gesture.current = null
+    setMenu(null)
+    setPending(null)
+  }
+  // Escape, or leaving the window (switching app/tab mid-drag, where no pointerup ever arrives), drops the wire.
+  useEffect(() => {
+    if (!menu && !pending) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && cancelWire()
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('blur', cancelWire)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('blur', cancelWire)
+    }
+  })
 
   // The live viewport. Panning and wheel-scrolling update it every frame but only re-render
   // the canvas; the parent hears about it once the view settles (reporting every frame would
@@ -201,9 +239,15 @@ export function Canvas({
       setDragPos(null)
     }
     if (g.type === 'connect') {
-      const target = blockAt(toWorld(e.clientX, e.clientY))
+      const at = toWorld(e.clientX, e.clientY)
+      const target = blockAt(at)
+      const dragged = Math.abs(e.clientX - g.start.x) + Math.abs(e.clientY - g.start.y) > 6
       if (onConnect && target && target.id !== g.sourceId) onConnect(g.sourceId, target.id)
-      setPending(null)
+      if (!target && dragged && onConnectToNew) {
+        // Keep the wire drawn to the drop point while the menu is open.
+        openMenu({ type: 'wire', sourceId: g.sourceId }, at)
+        setPending({ sourceId: g.sourceId, to: at })
+      } else setPending(null)
     }
   }
 
@@ -225,13 +269,31 @@ export function Canvas({
         backgroundPosition: `${view.x}px ${view.y}px`,
       }}
       onPointerDown={(e) => {
+        if (menu && !(e.target as HTMLElement).closest('[role=menu]')) cancelWire()
         if (e.button !== 0 || e.target !== e.currentTarget) return
         capture(e)
         gesture.current = { type: 'pan', start: { x: e.clientX, y: e.clientY }, origin: view, moved: false }
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerCancel={(e) => (gesture.current?.type === 'connect' ? cancelWire() : onPointerUp(e))}
+      // Capture can be lost without a pointerup (e.g. the window loses focus); a wire mid-draw is then abandoned.
+      onLostPointerCapture={() => gesture.current?.type === 'connect' && cancelWire()}
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest('[role=menu], textarea')) return
+        e.preventDefault()
+        cancelWire()
+        const at = toWorld(e.clientX, e.clientY)
+        const connectionId = (e.target as Element).closest('[data-connection-id]')?.getAttribute('data-connection-id')
+        const block = connectionId ? undefined : blockAt(at)
+        if (connectionId) {
+          onSelect?.({ type: 'connection', id: connectionId })
+          if (onDeleteConnection) openMenu({ type: 'connection', id: connectionId }, at)
+        } else if (block) {
+          onSelect?.({ type: 'block', id: block.id })
+          if (onRenameBlock || onDeleteBlock) openMenu({ type: 'block', id: block.id }, at)
+        } else if (onAddBlockAt) openMenu({ type: 'canvas' }, at)
+      }}
       // Pointer capture retargets clicks to the canvas itself, so find the block under the pointer here.
       onDoubleClick={(e) => {
         if (!onRenameBlock || (e.target as HTMLElement).closest('textarea')) return
@@ -260,6 +322,7 @@ export function Canvas({
                   fill="none"
                   stroke="transparent"
                   strokeWidth={12}
+                  data-connection-id={c.id}
                   className="pointer-events-auto cursor-pointer"
                   onPointerDown={(e) => {
                     e.stopPropagation()
@@ -303,7 +366,7 @@ export function Canvas({
                   if (e.button !== 0) return
                   e.stopPropagation()
                   capture(e)
-                  gesture.current = { type: 'connect', sourceId: b.id }
+                  gesture.current = { type: 'connect', sourceId: b.id, start: { x: e.clientX, y: e.clientY } }
                   setPending({ sourceId: b.id, to: toWorld(e.clientX, e.clientY) })
                 })
               }
@@ -312,6 +375,76 @@ export function Canvas({
         ))}
       </div>
 
+      {menu && (
+        // Tabbing (or otherwise moving focus) out of the menu closes it, dropping any wire.
+        <div className="contents" onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && cancelWire()}>
+          <Menu
+            aria-label={menu.type === 'wire' ? 'Add connected block' : menu.type === 'canvas' ? 'Canvas options' : `${menu.type === 'block' ? 'Block' : 'Connection'} options`}
+            className="z-30"
+            style={menuPosition(view.x + menu.at.x * view.zoom, view.y + menu.at.y * view.zoom, menuRows(menu.type), menu.bounds)}
+          >
+            {menu.type === 'wire' || menu.type === 'canvas' ? (
+              <>
+                <MenuLabel>Add block</MenuLabel>
+                {BLOCK_KINDS.map((kind) => (
+                  <MenuItem
+                    key={kind}
+                    autoFocus={kind === BLOCK_KINDS[0]}
+                    onClick={() => {
+                      cancelWire()
+                      if (menu.type === 'wire') onConnectToNew?.(menu.sourceId, kind, menu.at)
+                      else onAddBlockAt?.(kind, menu.at)
+                    }}
+                  >
+                    <span className="flex items-center gap-step-md">
+                      <TypeSwatch kind={kind} size="md" />
+                      {blockKindLabel[kind]}
+                    </span>
+                  </MenuItem>
+                ))}
+              </>
+            ) : menu.type === 'block' ? (
+              <>
+                {onRenameBlock && (
+                  <MenuItem
+                    autoFocus
+                    onClick={() => {
+                      cancelWire()
+                      setEditingId(menu.id)
+                    }}
+                  >
+                    Rename
+                  </MenuItem>
+                )}
+                {onDeleteBlock && (
+                  <MenuItem
+                    danger
+                    autoFocus={!onRenameBlock}
+                    onClick={() => {
+                      cancelWire()
+                      onDeleteBlock(menu.id)
+                    }}
+                  >
+                    Delete block
+                  </MenuItem>
+                )}
+              </>
+            ) : (
+              <MenuItem
+                danger
+                autoFocus
+                onClick={() => {
+                  cancelWire()
+                  onDeleteConnection?.(menu.id)
+                }}
+              >
+                Delete connection
+              </MenuItem>
+            )}
+          </Menu>
+        </div>
+      )}
+
       <div className="absolute top-step-2xl left-step-2xl">
         <ZoomControl percent={Math.round(view.zoom * 100)} onZoomIn={() => zoomStep(1)} onZoomOut={() => zoomStep(-1)} />
       </div>
@@ -319,4 +452,25 @@ export function Canvas({
       {children}
     </section>
   )
+}
+
+type CanvasMenu =
+  | { type: 'wire'; sourceId: string }
+  | { type: 'canvas' }
+  | { type: 'block'; id: string }
+  | { type: 'connection'; id: string }
+
+/** Item rows per menu, to keep it on screen: the block-kind menus have a label plus a row per kind. */
+const menuRows = (type: CanvasMenu['type']) => (type === 'wire' || type === 'canvas' ? BLOCK_KINDS.length + 1 : type === 'block' ? 2 : 1)
+
+/** Menu width (--spacing-menu-width), row height and padding. */
+const MENU = { width: 184, row: 30, padding: 14, gap: 8 }
+
+/** Beside the point, flipped left or nudged up so the menu stays inside the canvas. */
+function menuPosition(x: number, y: number, rows: number, bounds: { width: number; height: number }) {
+  const { width, gap } = MENU
+  const height = rows * MENU.row + MENU.padding
+  const left = x + gap + width <= bounds.width ? x + gap : Math.max(gap, x - gap - width)
+  const top = Math.max(gap, Math.min(y - 16, bounds.height - height - gap))
+  return { left, top }
 }

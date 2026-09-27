@@ -39,7 +39,7 @@ export function MenuItem({ checked, danger, children, className = '', ...props }
       type="button"
       role={checked === undefined ? 'menuitem' : 'menuitemradio'}
       aria-checked={checked}
-      className={`flex h-control-sm shrink-0 items-center gap-step-md rounded-md border-0 bg-transparent px-step-sm text-left text-label hover:bg-surface-sunken ${
+      className={`flex h-control-sm shrink-0 items-center gap-step-md rounded-md border-0 bg-transparent px-step-sm text-left text-label outline-none hover:bg-surface-sunken focus-visible:bg-surface-sunken ${
         danger ? 'text-hotspot-text' : 'text-text'
       } ${className}`}
       {...props}
