@@ -1,0 +1,15 @@
+{
+  "name": "stormm-explain",
+  "version": "0.1.0",
+  "description": "Variant of the stormm plugin for comparison: Claude reads the storm through the `stormm explain` summary first, instead of reading the YAML directly.",
+  "author": {
+    "name": "Pkittipat"
+  },
+  "keywords": [
+    "event-storming",
+    "ddd",
+    "domain-modeling",
+    "codegen",
+    "stormm"
+  ]
+}

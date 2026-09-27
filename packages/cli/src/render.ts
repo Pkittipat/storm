@@ -54,6 +54,21 @@ export function renderExplain(c: Contract, issues: Issue[]) {
     out.push('')
   }
 
+  // The read side: what each read model exposes, to whom, what it leads them to do, and where its data comes from.
+  const readModels = c.units.filter((u) => u.kind === 'readmodel')
+  if (readModels.length) out.push('## Read side', '')
+  for (const rm of readModels) {
+    const l = rm.links
+    const leadsTo = (l.feeds ?? []).map((id) => unit.get(id)!)
+    const actors = [...new Set(leadsTo.flatMap((cmd) => (cmd.actor ? [cmd.actor] : [])))]
+    out.push(`### ${rm.title}`, '')
+    out.push(`- exposes: ${rm.fields.length ? rm.fields.map((f) => `${f.name}: ${f.type}`).join(', ') : 'no fields yet (the storm doesn\'t say what is shown)'}`)
+    if (actors.length) out.push(`- seen by: ${actors.join(', ')}`)
+    out.push(`- leads to: ${leadsTo.length ? leadsTo.map((cmd) => cmd.title).join(', ') : 'no command (information only)'}`)
+    out.push(`- data from: ${l.updatedBy ? l.updatedBy.map(title).join(', ') : 'not stated (no event updates it)'}`)
+    out.push('')
+  }
+
   out.push('## Gaps', '', ...(c.gaps.length ? c.gaps.map((g) => `- ${g}`) : ['- none']), '')
   return out.join('\n')
 }

@@ -3,7 +3,7 @@ import { BLOCK_KINDS, type Block, type BlockKind, type Board, type Connection, t
 /**
  * The storm as a language-neutral contract: every block is a unit of code, every
  * connection a relationship between two units. What the relationships mean in code
- * (a method, a handler, a projection…) is up to the repository's conventions.
+ * (a method, a handler, a projection…) is up to each project.
  */
 export interface Contract {
   id: string

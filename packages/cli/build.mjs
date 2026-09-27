@@ -1,9 +1,10 @@
 // Bundles the CLI into one file inside the plugin, so installing the plugin needs no npm install.
 import { build } from 'esbuild'
 
-await build({
+// plugins/stormm-explain is a comparison variant of the same plugin; it ships the same CLI.
+for (const plugin of ['stormm', 'stormm-explain']) await build({
   entryPoints: ['src/cli.ts'],
-  outfile: '../../plugins/stormm/scripts/stormm.mjs',
+  outfile: `../../plugins/${plugin}/scripts/stormm.mjs`,
   bundle: true,
   platform: 'node',
   format: 'esm',

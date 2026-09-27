@@ -9,8 +9,8 @@ Everything runs in the browser. There is no server: processes and projects are k
 - **apps/web** — React + Vite + TypeScript + Tailwind CSS v4
 - **packages/process-model** — the process YAML v1 format: types, canonical writer, parser, validator, diff, derived layout and board edits ([spec](docs/process-yaml-v1.md))
 - **packages/codegen** — R&D: process model → Go domain code (not used by the app)
-- **packages/cli** — `stormm explain` / `stormm changes`: reads a process YAML for coding agents; bundled into the plugin by `pnpm --filter @stormm/cli build`
-- **plugins/stormm** — Claude Code plugin with the `storm-to-code` skill: storm YAML → code in any language, following the repo's `.stormm/conventions.md` ([README](plugins/stormm/README.md)). This repo is its marketplace: `/plugin marketplace add <this repo>` then `/plugin install stormm@stormm`
+- **packages/cli** — `stormm check` / `stormm changes` (plus `explain`, a reading aid for people): helpers for a process YAML; bundled into the plugin by `pnpm --filter @stormm/cli build`
+- **plugins/stormm** — Claude Code plugin with the `storm-to-code` skill: process modeling coding: the storm is the domain design (model, interface, usage), and each project's own code decides how it's built ([README](plugins/stormm/README.md)). This repo is its marketplace: `/plugin marketplace add <this repo>` then `/plugin install stormm@stormm`
 
 ## Prerequisites
 

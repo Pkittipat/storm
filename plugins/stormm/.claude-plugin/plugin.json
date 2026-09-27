@@ -1,9 +1,15 @@
 {
   "name": "stormm",
   "version": "0.1.0",
-  "description": "Turn Stormm event-storm process YAML into code in your repository's own language and structure, and keep the code in step as the storm changes.",
+  "description": "Process modeling coding: a finished event storm is already the domain design (model, interface, usage). Claude implements it in your project's own way. Any language, any architecture.",
   "author": {
     "name": "Pkittipat"
   },
-  "keywords": ["event-storming", "ddd", "domain-modeling", "codegen", "stormm"]
+  "keywords": [
+    "event-storming",
+    "ddd",
+    "domain-modeling",
+    "codegen",
+    "stormm"
+  ]
 }

@@ -24,39 +24,45 @@ So your job is to **implement the storm's design the project's way**. Don't desi
 5. **The storm changes first.** When the code needs something the storm doesn't have, suggest the change to the storm. Never edit the storm yourself to make room for code.
 6. **Leave a trail.** At the end, say how the storm maps to what you wrote and what's still open, so the next change starts from the storm.
 
-## Read the YAML itself
+## The helper CLI
 
-The `.yaml` file is the design, so always read it directly and take its meaning from there. Don't substitute a summary, including one you or a tool produced earlier. When anything seems off, go back to the file. [references/meaning.md](references/meaning.md) explains how to read it.
-
-The plugin ships two small helpers (Node 20+). Neither interprets the storm:
+The plugin ships a CLI that reads the storm deterministically. It needs Node 20+:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/stormm.mjs" check <process.yaml>                    # is it valid? same rules as the Stormm app
+node "${CLAUDE_PLUGIN_ROOT}/scripts/stormm.mjs" explain <process.yaml>                  # stickies, arrows, one slice per command, the read side, gaps
 node "${CLAUDE_PLUGIN_ROOT}/scripts/stormm.mjs" changes <process.yaml> --since <git-ref> # what differs since that commit, by block id
 ```
 
-- **`check`** prints the validator's errors and warnings exactly as the Stormm app reports them. On errors (unknown kind, a connection to a missing block…) show them to the user and stop: they must be fixed in the storm.
-- **`changes`** lists what differs between the two versions of the file, matched by block id, in the YAML's own terms: blocks added, removed or changed (title, kind, actor, fields, hotspots) and connections added or removed. Matching by id is what tells a rename from a delete-and-add. It is a list of differences, not the design: read the current YAML for the meaning. Add `--json` for the raw diff.
+- **`explain`** turns the YAML into a summary that's easier to code from:
+  - every sticky with its code names
+  - every arrow in plain words ("Job handles Publish Job")
+  - one slice per command
+  - the read side (what each read model exposes, who sees it, which command it leads to)
+  - the gaps
 
-Without Node, read the YAML carefully and compare versions yourself with `git show <ref>:<path>`, matching blocks by `id`.
+  It exits non-zero when the storm has errors (unknown kind, a connection to a missing block…); show those to the user and stop, since they must be fixed in the storm.
+- **`changes`** lists what differs between two versions of the file, matched by block id.
+- Add `--json` to either for the data as JSON.
+
+Without Node, read the YAML directly with references/meaning.md, and compare versions with `git show <ref>:<path>`.
 
 ## Working from a storm
 
-1. **Read the design** from the YAML (run `check` first if you can). Restate it briefly:
+1. **Read the design.** Run `explain` and restate the design briefly:
    - the model (aggregates)
    - its interface (commands in, events out, with their fields)
    - its usage (actors, read models and what they expose, policies)
 
-   Work a slice at a time: one command and everything that follows from it.
+   Work a slice at a time: one command and everything that follows from it. The `Read side` section lists what each read model exposes, who sees it and which command it leads to.
 2. **Learn how the project builds.** Read enough of the codebase to know how it already expresses a domain model, its operations and events, reactions and views, and how it tests them. Don't assume a pattern; find one.
-3. **Raise the gaps** before writing ([references/meaning.md](references/meaning.md) lists what a storm leaves open), and agree with the user how to handle each.
+3. **Raise the gaps** from `explain` (and any you see) before writing, and agree with the user how to handle each.
 4. **Implement the design** the project's way, in the storm's language, with the project's kind of tests for the behavior the storm describes.
 5. **Verify** with the project's own build, lint and test commands.
 6. **Report** which part of the code carries each sticky and arrow, what you left open, and anything you'd suggest adding to the storm.
 
 ## When the storm changes
 
-The code already exists, so don't start over. Run `changes --since <ref>`, where `<ref>` is the commit the code last matched. Ask if it isn't clear; the last commit touching both the storm and the code is a good guess. Then read the current YAML for what each difference means, find the code that carries it, and change it the project's way:
+The code already exists, so don't start over. Run `changes --since <ref>`, where `<ref>` is the commit the code last matched. Ask if it isn't clear; the last commit touching both the storm and the code is a good guess. Then use `explain` on the current storm for what each difference means, find the code that carries it, and change it the project's way:
 - a new title means renamed code
 - a new or removed connection means a new or removed behavior
 - a changed field means changed data

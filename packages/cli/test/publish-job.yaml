@@ -50,7 +50,6 @@ connections:
   - { from: job-detail, to: publish-job }
   - { from: publish-job, to: job }
   - { from: job, to: job-published }
-  - { from: job-published, to: job-detail }
   - { from: job-published, to: log-activity }
   - { from: job-published, to: notify-organization-members }
   - { from: log-activity, to: create-activity-log }

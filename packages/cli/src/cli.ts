@@ -6,14 +6,17 @@ import { changes, renderChanges } from './changes.js'
 import { buildContract } from './contract.js'
 import { renderExplain } from './render.js'
 
-const USAGE = `stormm — read a Stormm process YAML for coding
+const USAGE = `stormm: tools for a Stormm process YAML
 
-  stormm explain <process.yaml> [--json]
-      The storm as units, arrows, one slice per command, and its gaps.
+  stormm check <process.yaml>
+      Validate the storm with the same rules as the Stormm app. Exits 1 on errors.
 
   stormm changes <process.yaml> --since <git-ref> [--json]
-      What changed in the storm since <git-ref>, as work items.
+      What differs in the storm since <git-ref>, matched by block id, in the YAML's own terms.
       A file that didn't exist at <git-ref> counts as all new.
+
+  stormm explain <process.yaml> [--json]
+      A reading aid for people: units, arrows, slices, the read side and gaps.
 `
 
 function fail(message: string, code = 1): never {
@@ -65,6 +68,15 @@ try {
 } catch {
   fail(`Can't read ${path}.`)
 }
+if (command === 'check') {
+  const { board, issues: parseIssues } = parseBoard(text)
+  const issues = board ? [...parseIssues, ...validate(board)] : parseIssues
+  for (const i of issues) process.stdout.write(`${i.level}: ${i.message}${i.path ? ` (${i.path})` : ''}\n`)
+  if (!board || hasErrors(issues)) process.exit(1)
+  process.stdout.write(`ok: ${path} is a valid storm (${board.blocks.length} blocks, ${board.connections.length} connections${issues.length ? `, ${issues.length} warning${issues.length > 1 ? 's' : ''}` : ''})\n`)
+  process.exit(0)
+}
+
 const { board, issues } = load(text, path)
 const contract = buildContract(board)
 
@@ -74,8 +86,8 @@ if (command === 'explain') {
   if (!since) fail('changes needs --since <git-ref>.', 2)
   const old = atRef(file, since)
   const before = old === null ? null : load(old, `${path} at ${since}`).board
-  const items = changes(before, board)
-  process.stdout.write(json ? JSON.stringify({ since, items, gaps: contract.gaps }, null, 2) + '\n' : renderChanges(items, before ? since : null, contract.gaps))
+  const diff = changes(before, board)
+  process.stdout.write(json ? JSON.stringify({ since, new: before === null, ...diff }, null, 2) + '\n' : renderChanges(diff, before, board, since))
 } else {
   fail(USAGE, 2)
 }

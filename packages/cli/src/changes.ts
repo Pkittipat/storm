@@ -1,83 +1,71 @@
-import { diffBoards, type Board, type Field } from '@stormm/process-model'
-import { KIND_LABEL, buildContract, names, type Arrow, type Unit } from './contract.js'
-import { unitLine } from './render.js'
-
-export interface WorkItem {
-  /** add | remove | rename | change | connect | disconnect */
-  action: string
-  text: string
-  unitId?: string
-}
-
-const fieldKey = (f: Field) => `${f.name}: ${f.type}`
+import { diffBoards, type Block, type Board, type BoardDiff, type Field } from '@stormm/process-model'
 
 /**
- * What changed in the storm since the code was last written, as work for an engineer.
- * `before` is null when the storm is new: everything is work to add.
+ * What differs between two versions of a storm, matched by block id, in the YAML's own terms:
+ * ids, kinds, titles, actors, fields, hotspots and connections. No interpretation is added;
+ * the reader takes the meaning from the storm itself.
+ * `before` is null when the storm is new: everything in it is added.
  */
-export function changes(before: Board | null, after: Board): WorkItem[] {
-  const base: Board = before ?? { ...after, blocks: [], connections: [] }
-  const d = diffBoards(base, after)
-  const now = buildContract(after)
-  const then = buildContract(base)
-  const unitNow = new Map(now.units.map((u) => [u.id, u]))
-  const unitThen = new Map(then.units.map((u) => [u.id, u]))
-  const items: WorkItem[] = []
-  const label = (u: Unit) => `${KIND_LABEL[u.kind]} ${u.title} (\`${u.names.pascal}\`)`
-
-  for (const b of d.blocks.added) {
-    const u = unitNow.get(b.id)!
-    items.push({ action: 'add', unitId: u.id, text: `Add ${KIND_LABEL[u.kind]} ${unitLine(u)}` })
-  }
-  for (const b of d.blocks.removed) {
-    const u = unitThen.get(b.id)!
-    items.push({ action: 'remove', unitId: u.id, text: `Remove ${label(u)} and the code for its arrows.` })
-  }
-  for (const { before: a, after: b, changes: what } of d.blocks.changed) {
-    const u = unitNow.get(b.id)!
-    if (what.includes('title')) {
-      const old = names(a.title).pascal
-      items.push({
-        action: 'rename',
-        unitId: u.id,
-        text: old === u.names.pascal
-          ? `Title of ${KIND_LABEL[u.kind]} \`${old}\` changed from "${a.title}" to "${b.title}"; the code name stays.`
-          : `Rename ${KIND_LABEL[u.kind]} \`${old}\` → \`${u.names.pascal}\` ("${a.title}" → "${b.title}"), everywhere it is used.`,
-      })
-    }
-    if (what.includes('kind'))
-      items.push({ action: 'change', unitId: u.id, text: `"${b.title}" was a ${KIND_LABEL[a.kind]} and is now a ${KIND_LABEL[b.kind]}: move and reshape its code.` })
-    if (what.includes('actor'))
-      items.push({ action: 'change', unitId: u.id, text: `Actor of ${label(u)}: ${a.actor ?? 'none'} → ${b.actor ?? 'none'}.` })
-    if (what.includes('fields')) {
-      const was = new Set(a.fields.map(fieldKey))
-      const is = new Set(b.fields.map(fieldKey))
-      const added = b.fields.map(fieldKey).filter((f) => !was.has(f))
-      const removed = a.fields.map(fieldKey).filter((f) => !is.has(f))
-      items.push({
-        action: 'change',
-        unitId: u.id,
-        text: `Fields of ${label(u)}:${added.length ? ` add ${added.join(', ')}.` : ''}${removed.length ? ` remove ${removed.join(', ')}.` : ''}`,
-      })
-    }
-    if (what.includes('hotspots')) {
-      const added = b.hotspots.filter((h) => !a.hotspots.includes(h))
-      const resolved = a.hotspots.filter((h) => !b.hotspots.includes(h))
-      for (const h of added) items.push({ action: 'change', unitId: u.id, text: `New hotspot on ${label(u)}: ${h}` })
-      for (const h of resolved) items.push({ action: 'change', unitId: u.id, text: `Hotspot resolved on ${label(u)}: ${h} (check any TODO left for it).` })
-    }
-  }
-
-  const arrow = (list: Arrow[], from: string, to: string) => list.find((a) => a.from === from && a.to === to)!
-  for (const c of d.connections.added) items.push({ action: 'connect', text: `New arrow: ${arrow(now.arrows, c.from, c.to).text}.` })
-  for (const c of d.connections.removed) items.push({ action: 'disconnect', text: `Removed arrow: ${arrow(then.arrows, c.from, c.to).text}; remove the code that realizes it.` })
-  return items
+export function changes(before: Board | null, after: Board): BoardDiff {
+  return diffBoards(before ?? { ...after, name: after.name, blocks: [], connections: [] }, after)
 }
 
-export function renderChanges(items: WorkItem[], since: string | null, gaps: string[]) {
-  const out = [`# Storm changes ${since ? `since ${since}` : '(new storm: everything is new)'}`, '']
-  if (!items.length) out.push('Nothing changed.')
-  items.forEach((it, i) => out.push(`${i + 1}. ${it.text}`))
-  out.push('', '## Gaps in the storm now', '', ...(gaps.length ? gaps.map((g) => `- ${g}`) : ['- none']), '')
+const field = (f: Field) => `${f.name}: ${f.type}`
+const quote = (s: string) => JSON.stringify(s)
+
+function blockLine(b: Block) {
+  const parts = [`title: ${b.title}`]
+  if (b.actor) parts.push(`actor: ${b.actor}`)
+  if (b.fields.length) parts.push(`fields: ${b.fields.map(field).join(', ')}`)
+  if (b.hotspots.length) parts.push(`hotspots: ${b.hotspots.map(quote).join(', ')}`)
+  return `- \`${b.id}\` (${b.kind}) ${parts.join('; ')}`
+}
+
+function fieldChanges(a: Field[], b: Field[]): string[] {
+  const was = new Map(a.map((f) => [f.name, f.type]))
+  const is = new Map(b.map((f) => [f.name, f.type]))
+  const out: string[] = []
+  for (const f of b) {
+    if (!was.has(f.name)) out.push(`field added: ${field(f)}`)
+    else if (was.get(f.name) !== f.type) out.push(`field type: ${f.name}: ${was.get(f.name)} → ${f.type}`)
+  }
+  for (const f of a) if (!is.has(f.name)) out.push(`field removed: ${field(f)}`)
+  // Same fields, different order.
+  if (!out.length && a.length === b.length) out.push(`field order: ${b.map((f) => f.name).join(', ')}`)
+  return out
+}
+
+export function renderChanges(d: BoardDiff, before: Board | null, after: Board, since: string) {
+  const title = (id: string) => after.blocks.find((b) => b.id === id)?.title ?? before?.blocks.find((b) => b.id === id)?.title ?? id
+  const out = [
+    before ? `# Storm changes since ${since}` : `# Storm changes since ${since}: the file is new there, so everything is added`,
+    '',
+    'What differs between the two versions of the YAML, matched by block id. The YAML itself is the design; read it for the whole picture.',
+    '',
+  ]
+  const section = (heading: string, lines: string[]) => lines.length && out.push(`## ${heading}`, '', ...lines, '')
+
+  if (d.name) section('Process name', [`- ${d.name.from} → ${d.name.to}`])
+  section('Blocks added', d.blocks.added.map(blockLine))
+  section('Blocks removed', d.blocks.removed.map(blockLine))
+  section(
+    'Blocks changed',
+    d.blocks.changed.map(({ before: a, after: b, changes: what }) => {
+      const lines: string[] = []
+      if (what.includes('title')) lines.push(`title: ${a.title} → ${b.title}`)
+      if (what.includes('kind')) lines.push(`kind: ${a.kind} → ${b.kind}`)
+      if (what.includes('actor')) lines.push(`actor: ${a.actor ?? '(none)'} → ${b.actor ?? '(none)'}`)
+      if (what.includes('fields')) lines.push(...fieldChanges(a.fields, b.fields))
+      if (what.includes('hotspots')) {
+        for (const h of b.hotspots.filter((h) => !a.hotspots.includes(h))) lines.push(`hotspot added: ${quote(h)}`)
+        for (const h of a.hotspots.filter((h) => !b.hotspots.includes(h))) lines.push(`hotspot removed: ${quote(h)}`)
+      }
+      return `- \`${b.id}\` (${b.kind}) ${b.title}\n${lines.map((l) => `  - ${l}`).join('\n')}`
+    }),
+  )
+  const conn = (c: { from: string; to: string }) => `- \`${c.from}\` → \`${c.to}\` (${title(c.from)} → ${title(c.to)})`
+  section('Connections added', d.connections.added.map(conn))
+  section('Connections removed', d.connections.removed.map(conn))
+  if (out.length === 4) out.push('Nothing changed.', '')
   return out.join('\n')
 }
