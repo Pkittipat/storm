@@ -1,0 +1,27 @@
+{
+  "name": "@stormm/cli",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "stormm CLI: reads a Stormm process YAML for coding agents (explain, changes). Bundled into the Claude Code plugin in plugins/stormm.",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stormm/process-model": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "esbuild": "^0.28.2",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

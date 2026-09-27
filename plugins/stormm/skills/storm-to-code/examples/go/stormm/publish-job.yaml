@@ -1,0 +1,57 @@
+schemaVersion: 1
+id: publish-job
+name: Publish Job
+
+blocks:
+  - id: job-detail
+    kind: readmodel
+    title: Job Detail
+    fields:
+      - { name: jobId, type: string }
+      - { name: title, type: string }
+      - { name: status, type: string }
+      - { name: publishedAt, type: time }
+  - id: publish-job
+    kind: command
+    title: Publish Job
+    actor: Recruiter
+    fields:
+      - { name: jobId, type: string }
+      - { name: recruiterId, type: string }
+  - { id: job, kind: aggregate, title: Job }
+  - id: job-published
+    kind: event
+    title: Job Published
+    fields:
+      - { name: jobId, type: string }
+      - { name: organizationId, type: string }
+      - { name: publishedBy, type: string }
+      - { name: publishedAt, type: time }
+  - { id: log-activity, kind: policy, title: Log activity }
+  - { id: notify-organization-members, kind: policy, title: Notify organization members }
+  - id: create-activity-log
+    kind: command
+    title: Create Activity Log
+    fields:
+      - { name: subjectId, type: string }
+      - { name: action, type: string }
+      - { name: actorId, type: string }
+      - { name: at, type: time }
+  - id: notify-member
+    kind: command
+    title: Notify Member
+    hotspots:
+      - "Which members? Everyone in the organization, or only hiring managers?"
+    fields:
+      - { name: organizationId, type: string }
+      - { name: jobId, type: string }
+
+connections:
+  - { from: job-detail, to: publish-job }
+  - { from: publish-job, to: job }
+  - { from: job, to: job-published }
+  - { from: job-published, to: job-detail }
+  - { from: job-published, to: log-activity }
+  - { from: job-published, to: notify-organization-members }
+  - { from: log-activity, to: create-activity-log }
+  - { from: notify-organization-members, to: notify-member }

@@ -1,0 +1,9 @@
+{
+  "name": "stormm",
+  "version": "0.1.0",
+  "description": "Turn Stormm event-storm process YAML into code in your repository's own language and structure, and keep the code in step as the storm changes.",
+  "author": {
+    "name": "Pkittipat"
+  },
+  "keywords": ["event-storming", "ddd", "domain-modeling", "codegen", "stormm"]
+}

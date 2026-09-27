@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "stormm",
+  "description": "Stormm: event storming to code.",
+  "owner": {
+    "name": "Pkittipat"
+  },
+  "plugins": [
+    {
+      "name": "stormm",
+      "description": "Turn Stormm event-storm process YAML into code in your repository's own language and structure, and keep the code in step as the storm changes.",
+      "category": "development",
+      "source": "./plugins/stormm"
+    }
+  ]
+}
