@@ -2,8 +2,11 @@ import {
   addBlock as addBlockTo,
   connect as connectBlocks,
   disconnect,
+  extractBlocks,
   findBlock,
   layoutBoard,
+  parseBoard,
+  pasteBlocks,
   removeBlock,
   renameBoard,
   retitleNewBlock,
@@ -12,9 +15,11 @@ import {
   validate,
   type BlockPatch,
   type Board,
+  type Point,
 } from '@stormm/process-model'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, type CanvasBlock, type CanvasConnection, type Selection, type Viewport } from './canvas/Canvas'
+import { Canvas, type CanvasBlock, type CanvasConnection, type Viewport } from './canvas/Canvas'
+import { selectBlocks, selectedBlockIds, type Selection } from './canvas/selection'
 import { LAYOUT, PORT_Y, snap } from './canvas/geometry'
 import { Inspector } from './canvas/Inspector'
 import { YamlPanel } from './canvas/YamlPanel'
@@ -180,6 +185,59 @@ function App() {
     edit((b) => removeBlock(b, id))
   }
 
+  const deleteBlocks = (ids: string[]) => {
+    setSelection(null)
+    edit((b) => ids.reduce((acc, id) => removeBlock(acc, id), b))
+  }
+
+  // ── Copy and paste ───────────────────────────────────────────────────────
+  // A copy is the selected blocks and the connections between them, as storm YAML, so it pastes
+  // into any process (or anywhere text goes). Positions aren't part of the YAML; the last copy
+  // remembers them so pasting it back keeps the blocks' arrangement, a step further each time.
+  const lastCopy = useRef<{ text: string; positions: Map<string, Point>; pastes: number } | null>(null)
+
+  const copyBlocks = (ids: string[]) => {
+    if (!board || !ids.length) return
+    const text = toYaml(extractBlocks(board, ids))
+    const positions = new Map(canvasBlocks.filter((b) => ids.includes(b.id)).map((b) => [b.id, { x: b.x, y: b.y }]))
+    lastCopy.current = { text, positions, pastes: 0 }
+    navigator.clipboard.writeText(text).then(() => setNotice({ text: `Copied ${ids.length} block${ids.length > 1 ? 's' : ''}` }), fail)
+  }
+
+  /** Pastes storm YAML as new blocks; returns false when the text isn't a process with blocks. */
+  const pasteText = (text: string) => {
+    if (!board) return false
+    const { board: fragment } = parseBoard(text)
+    if (!fragment?.blocks.length) return false
+    let ids = new Map<string, string>()
+    edit((b) => {
+      const r = pasteBlocks(b, fragment)
+      ids = r.ids
+      return r.board
+    })
+    const copy = lastCopy.current
+    if (copy?.text === text) {
+      copy.pastes += 1
+      const step = 40 * copy.pastes
+      for (const [from, to] of ids) {
+        const p = copy.positions.get(from)
+        if (p) dragged.move(to, { x: snap(p.x + step), y: snap(p.y + step) })
+      }
+    }
+    setSelection(selectBlocks([...ids.values()]))
+    setNotice({ text: `Pasted ${ids.size} block${ids.size > 1 ? 's' : ''}` })
+    return true
+  }
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return
+      if (pasteText(e.clipboardData?.getData('text/plain') ?? '')) e.preventDefault()
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  })
+
   const deleteConnection = (key: string) => {
     setSelection(null)
     const [from, to] = key.split('->')
@@ -250,6 +308,17 @@ function App() {
     setRenaming(false)
     setProcesses((ps) => ps?.map((p) => (p.id === board.id ? { ...p, name } : p)) ?? ps)
     edit((b) => renameBoard(b, name))
+  }
+
+  /** Renames any process from the sidebar; the open one goes through the editor so its undo and save state stay in step. */
+  const renameProcessById = (id: string, name: string) => {
+    if (id === board?.id) return renameProcess(name)
+    try {
+      storage.renameProcess(id, name)
+      setProcesses((ps) => ps?.map((p) => (p.id === id ? { ...p, name } : p)) ?? ps)
+    } catch (e) {
+      fail(e)
+    }
   }
 
   const moveProcess = (id: string, projectId: string | null) => {
@@ -364,16 +433,28 @@ function App() {
 
   const copyYaml = () => navigator.clipboard.writeText(yaml).then(() => setNotice({ text: 'YAML copied' }), fail)
 
-  // Delete/Backspace removes the selection; Escape clears it. Ignored while typing.
+  // Delete/Backspace removes the selection, Escape clears it, Cmd/Ctrl+C copies the selected
+  // blocks and Cmd/Ctrl+A selects them all. Ignored while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       if (el.closest('input, textarea, select, [contenteditable="true"]')) return
+      const ids = selectedBlockIds(selection)
+      const mod = e.metaKey || e.ctrlKey
       if (e.key === 'Escape') setSelection(null)
       if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
         e.preventDefault()
-        if (selection.type === 'block') deleteBlock(selection.id)
-        else deleteConnection(selection.id)
+        if (ids.length) deleteBlocks(ids)
+        else if (selection.type === 'connection') deleteConnection(selection.id)
+      }
+      // Text selected on the page (e.g. in the YAML panel) copies as usual.
+      if (mod && e.key.toLowerCase() === 'c' && ids.length && !window.getSelection()?.toString()) {
+        e.preventDefault()
+        copyBlocks(ids)
+      }
+      if (mod && e.key.toLowerCase() === 'a' && board && (el === document.body || el.closest('[aria-label="Process canvas"]'))) {
+        e.preventDefault()
+        setSelection(selectBlocks(board.blocks.map((b) => b.id)))
       }
     }
     window.addEventListener('keydown', onKey)
@@ -393,6 +474,7 @@ function App() {
             activeId={processId}
             onNewProcess={createProcess}
             onImport={importFiles}
+            onRenameProcess={renameProcessById}
             onMoveProcess={moveProcess}
             onNewProject={createProject}
             onRenameProject={renameProject}

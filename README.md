@@ -40,7 +40,7 @@ Every edit writes the whole YAML back straight away. Nothing leaves the browser 
 ## What works
 
 - **Processes** — create, rename (click the header title), delete, move between projects; each opens at `#/p/<id>`.
-- **Canvas** — add blocks from the composer's `+` (connected from the selected block), drag from a block's right port onto another block to connect, click a connector to select it, Delete/Backspace to remove the selection. Scroll to pan, ⌘/Ctrl-scroll or the zoom control to zoom.
+- **Canvas** — add blocks from the composer's `+` (connected from the selected block), drag from a block's right port onto another block to connect, click a connector to select it, Delete/Backspace to remove the selection. Drag on empty canvas to select the blocks inside a box (Shift adds), Shift-click to add or remove one, ⌘/Ctrl-A to select all; dragging a selected block moves the whole selection. ⌘/Ctrl-C copies the selected blocks and the connections between them as storm YAML; ⌘/Ctrl-V pastes them (into any process) with fresh ids. Scroll, Space-drag or middle-drag to pan; ⌘/Ctrl-scroll or the zoom control to zoom.
 - **Layout** — positions are derived from the YAML (columns follow the connections; each connected group gets its own rows). Dragging a block is a personal view preference kept in localStorage next to the process; **Reset layout** clears it.
 - **Inspector** — edit a block's title, actor, hotspots and fields; see what it connects from/to.
 - **YAML** — the exact file as stored, its validation errors and warnings, copy and download.

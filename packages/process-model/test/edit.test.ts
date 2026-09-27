@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addBlock, connect, disconnect, newBoard, newId, removeBlock, retitleNewBlock, slugify, updateBlock, validate } from '../src'
+import { addBlock, connect, disconnect, extractBlocks, newBoard, newId, pasteBlocks, removeBlock, retitleNewBlock, slugify, updateBlock, validate } from '../src'
 import { checkout } from './fixture'
 
 describe('ids', () => {
@@ -55,5 +55,29 @@ describe('edits', () => {
     expect(retitleNewBlock(board, 'reserve-stock', 'Reserve stock').blockId).toBe('reserve-stock')
     expect(retitleNewBlock(board, 'reserve-stock', 'Order').blockId).toBe('order-2')
     expect(validate(board)).toEqual([])
+  })
+})
+
+describe('copy and paste', () => {
+  it('copies the selected blocks with only the connections between them', () => {
+    const part = extractBlocks(checkout(), ['place-order', 'order', 'shipment'])
+    expect(part.blocks.map((b) => b.id)).toEqual(['place-order', 'order', 'shipment'])
+    expect(part.connections).toEqual([{ from: 'place-order', to: 'order' }])
+  })
+
+  it('pastes with fresh ids where taken, keeping the connections between the pasted blocks', () => {
+    const board = checkout()
+    const { board: after, ids } = pasteBlocks(board, extractBlocks(board, ['place-order', 'order']))
+    expect(Object.fromEntries(ids)).toEqual({ 'place-order': 'place-order-2', order: 'order-2' })
+    expect(after.blocks.slice(-2).map((b) => [b.id, b.title])).toEqual([['place-order-2', 'Place order'], ['order-2', 'Order']])
+    expect(after.connections.at(-1)).toEqual({ from: 'place-order-2', to: 'order-2' })
+    expect(validate(after).filter((i) => i.level === 'error')).toEqual([])
+  })
+
+  it('keeps ids that are free', () => {
+    const empty = newBoard('Empty')
+    const { board, ids } = pasteBlocks(empty, extractBlocks(checkout(), ['cart']))
+    expect(ids.get('cart')).toBe('cart')
+    expect(board.blocks.map((b) => b.id)).toEqual(['cart'])
   })
 })

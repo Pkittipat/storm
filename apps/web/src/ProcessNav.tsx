@@ -38,6 +38,7 @@ interface ProcessNavProps {
   onNewProcess: (projectId: string | null) => void
   /** Storm YAML files picked by the user; `folder` is the picked folder's name, or null for loose files. */
   onImport: (files: File[], folder: string | null) => void
+  onRenameProcess: (processId: string, name: string) => void
   onMoveProcess: (processId: string, projectId: string | null) => void
   /** Resolves with the created project so its name opens for editing. */
   onNewProject: () => Promise<Project | undefined>
@@ -59,6 +60,7 @@ export function ProcessNav({
   activeId,
   onNewProcess,
   onImport,
+  onRenameProcess,
   onMoveProcess,
   onNewProject,
   onRenameProject,
@@ -68,6 +70,7 @@ export function ProcessNav({
   const [sort, setSort] = useState<Sort>(() => stored<Sort>('stormm.processSort', 'created'))
   const [query, setQuery] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renamingProcessId, setRenamingProcessId] = useState<string | null>(null)
   const [context, setContext] = useState<{ process: ProcessSummary; x: number; y: number } | null>(null)
   const [projectContext, setProjectContext] = useState<{ project: Project; x: number; y: number } | null>(null)
   const closeContext = useCallback(() => setContext(null), [])
@@ -125,38 +128,53 @@ export function ProcessNav({
     setRenamingId(project.id)
   }
 
-  const item = (p: ProcessSummary) => (
-    <NavItem
-      key={p.id}
-      href={`#/p/${p.id}`}
-      active={p.id === activeId}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        // The keyboard's context-menu key reports 0,0 — anchor to the row instead.
-        const row = e.currentTarget.getBoundingClientRect()
-        setContext({ process: p, x: e.clientX || row.left + 24, y: e.clientY || row.bottom })
-      }}
-      actions={
-        <IconButton
-          size="sm"
-          aria-label={`${p.name} options`}
-          aria-haspopup="menu"
-          aria-expanded={context?.process.id === p.id}
-          icon={<MoreIcon />}
-          // Keep the pointer-down from reaching the open menu's outside-click handler, so a second click toggles it shut.
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            if (context?.process.id === p.id) return setContext(null)
-            const button = e.currentTarget.getBoundingClientRect()
-            // Right-aligned under the button (menu-width is 184px), so it opens inside the sidebar.
-            setContext({ process: p, x: Math.max(8, button.right - 184), y: button.bottom + 4 })
-          }}
+  const item = (p: ProcessSummary) =>
+    // Renaming swaps the link for a text box in the same row (a text box can't sit inside a link).
+    renamingProcessId === p.id ? (
+      <div key={p.id} className="flex h-control-md shrink-0 items-center gap-step-lg rounded-lg pr-step-md pl-step-2xl bg-surface-hover">
+        <span aria-hidden="true" className="box-border h-indicator-xs w-indicator-xs shrink-0 rounded-full border border-border-dot" />
+        <EditableText
+          aria-label="Process name"
+          value={p.name}
+          required
+          autoFocus
+          onCommit={(name) => onRenameProcess(p.id, name)}
+          onBlur={() => setRenamingProcessId(null)}
+          className="-mx-1 w-full px-1 text-body text-text"
         />
-      }
-    >
-      <span className="truncate">{p.name}</span>
-    </NavItem>
-  )
+      </div>
+    ) : (
+      <NavItem
+        key={p.id}
+        href={`#/p/${p.id}`}
+        active={p.id === activeId}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          // The keyboard's context-menu key reports 0,0 — anchor to the row instead.
+          const row = e.currentTarget.getBoundingClientRect()
+          setContext({ process: p, x: e.clientX || row.left + 24, y: e.clientY || row.bottom })
+        }}
+        actions={
+          <IconButton
+            size="sm"
+            aria-label={`${p.name} options`}
+            aria-haspopup="menu"
+            aria-expanded={context?.process.id === p.id}
+            icon={<MoreIcon />}
+            // Keep the pointer-down from reaching the open menu's outside-click handler, so a second click toggles it shut.
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              if (context?.process.id === p.id) return setContext(null)
+              const button = e.currentTarget.getBoundingClientRect()
+              // Right-aligned under the button (menu-width is 184px), so it opens inside the sidebar.
+              setContext({ process: p, x: Math.max(8, button.right - 184), y: button.bottom + 4 })
+            }}
+          />
+        }
+      >
+        <span className="truncate">{p.name}</span>
+      </NavItem>
+    )
 
   return (
     <>
@@ -266,6 +284,7 @@ export function ProcessNav({
         <ProcessContextMenu
           {...context}
           projects={sorted(projects)}
+          onRename={() => setRenamingProcessId(context.process.id)}
           onMove={(projectId) => moveTo(context.process.id, projectId)}
           onNewProject={() => moveToNewProject(context.process.id)}
           onClose={closeContext}
@@ -338,17 +357,20 @@ interface ProcessContextMenuProps {
   x: number
   y: number
   projects: Project[]
+  onRename: () => void
   onMove: (projectId: string | null) => void
   onNewProject: () => void
   onClose: () => void
 }
 
-/** A sidebar process's menu (⋮ or right-click): move it to a project, "No project", or a new project. */
-function ProcessContextMenu({ process, x, y, projects, onMove, onNewProject, onClose }: ProcessContextMenuProps) {
+/** A sidebar process's menu (⋮ or right-click): rename it, or move it to a project, "No project", or a new project. */
+function ProcessContextMenu({ process, x, y, projects, onRename, onMove, onNewProject, onClose }: ProcessContextMenuProps) {
   return (
-    <FloatingMenu label={`${process.name} options`} x={x} y={y} rows={projects.length + 2} onClose={onClose}>
+    <FloatingMenu label={`${process.name} options`} x={x} y={y} rows={projects.length + 3} onClose={onClose}>
       {(pick) => (
         <>
+          <MenuItem onClick={pick(onRename)}>Rename</MenuItem>
+          <div role="separator" className="mx-step-sm my-step-2xs h-px shrink-0 bg-border" />
           <MenuLabel>Move to</MenuLabel>
           {projects.map((p) => (
             <MenuItem key={p.id} checked={p.id === process.projectId} onClick={pick(() => p.id !== process.projectId && onMove(p.id))}>

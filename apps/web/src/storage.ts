@@ -111,6 +111,13 @@ export const storage = {
     localStorage.setItem(processKey(board.id), toYaml(board))
   },
 
+  /** Renames a process that may not be open; its id stays. */
+  renameProcess(id: string, name: string): void {
+    const { board, issues } = parseStored(id)
+    if (!board) throw new StorageError(`${id}.yaml can't be read as a process`, issues)
+    storage.saveProcess({ ...board, name })
+  },
+
   moveProcess(id: string, projectId: string | null): void {
     writeJson(INDEX_KEY, readIndex().map((e) => (e.id === id ? { ...e, projectId } : e)))
   },

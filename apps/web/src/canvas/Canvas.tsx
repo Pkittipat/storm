@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { BLOCK_KINDS } from '@stormm/process-model'
 import { BlockCard, Menu, MenuItem, MenuLabel, TypeSwatch, ZoomControl, blockKindLabel, type BlockKind } from '../components'
 import { BLOCK_HEIGHT, BLOCK_WIDTH, PORT_Y, connectorPath, snap, type Point } from './geometry'
+import { selectBlocks, selectedBlockIds, type Selection } from './selection'
 
-export type Selection = { type: 'block'; id: string } | { type: 'connection'; id: string } | null
+export type { Selection } from './selection'
 
 export interface Viewport {
   x: number
@@ -61,7 +62,9 @@ const ZOOM_MAX = 2
 
 type Gesture =
   | { type: 'pan'; start: Point; origin: Viewport; moved: boolean }
-  | { type: 'drag'; id: string; start: Point; origin: Point; moved: boolean }
+  | { type: 'drag'; ids: string[]; start: Point; origins: Map<string, Point>; moved: boolean }
+  /** A box drawn on empty canvas; `base` is what was already selected when Shift adds to it. */
+  | { type: 'marquee'; start: Point; base: string[]; moved: boolean }
   | { type: 'connect'; sourceId: string; start: Point }
 
 /** How long the viewport must stay still before it's reported to the parent. */
@@ -91,7 +94,29 @@ export function Canvas({
 }: CanvasProps) {
   const ref = useRef<HTMLElement>(null)
   const gesture = useRef<Gesture | null>(null)
-  const [dragPos, setDragPos] = useState<{ id: string } & Point | null>(null)
+  /** Blocks being dragged, and how far (world units) — one block, or the whole selection. */
+  const [dragOffset, setDragOffset] = useState<{ ids: Set<string>; dx: number; dy: number } | null>(null)
+  const [marquee, setMarquee] = useState<{ from: Point; to: Point } | null>(null)
+  // Space held: dragging pans instead of drawing a selection box, as in other canvas tools.
+  const [spaceHeld, setSpaceHeld] = useState(false)
+  useEffect(() => {
+    const typing = (e: KeyboardEvent) => e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || typing(e)) return
+      e.preventDefault()
+      setSpaceHeld(true)
+    }
+    const up = (e: KeyboardEvent) => e.code === 'Space' && setSpaceHeld(false)
+    const reset = () => setSpaceHeld(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', reset)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', reset)
+    }
+  }, [])
   const [pending, setPending] = useState<{ sourceId: string; to: Point } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   /** The open menu: a wire left on empty canvas waiting for a block kind, or a right-click on the canvas, a block or a connection. */
@@ -219,7 +244,11 @@ export function Canvas({
       const dy = (e.clientY - g.start.y) / view.zoom
       if (Math.abs(dx) + Math.abs(dy) > 3) g.moved = true
       // Follow the pointer exactly; snapping to the grid happens on drop.
-      if (g.moved) setDragPos({ id: g.id, x: g.origin.x + dx, y: g.origin.y + dy })
+      if (g.moved) setDragOffset({ ids: new Set(g.ids), dx, dy })
+    } else if (g.type === 'marquee') {
+      const to = toWorld(e.clientX, e.clientY)
+      if (Math.abs(to.x - g.start.x) + Math.abs(to.y - g.start.y) > 3 / view.zoom) g.moved = true
+      if (g.moved) setMarquee({ from: g.start, to })
     } else {
       setPending({ sourceId: g.sourceId, to: toWorld(e.clientX, e.clientY) })
     }
@@ -234,10 +263,24 @@ export function Canvas({
       else onSelect?.(null)
     }
     if (g.type === 'drag') {
-      const x = dragPos && snap(dragPos.x)
-      const y = dragPos && snap(dragPos.y)
-      if (onMoveBlock && g.moved && x !== null && y !== null && (x !== g.origin.x || y !== g.origin.y)) onMoveBlock(g.id, x, y)
-      setDragPos(null)
+      if (onMoveBlock && g.moved && dragOffset) {
+        for (const [id, origin] of g.origins) {
+          const x = snap(origin.x + dragOffset.dx)
+          const y = snap(origin.y + dragOffset.dy)
+          if (x !== origin.x || y !== origin.y) onMoveBlock(id, x, y)
+        }
+      }
+      setDragOffset(null)
+    }
+    if (g.type === 'marquee') {
+      setMarquee(null)
+      if (!g.moved) return onSelect?.(null)
+      // Blocks entirely inside the box are selected, as in other canvas tools.
+      const to = toWorld(e.clientX, e.clientY)
+      const [left, right] = [Math.min(g.start.x, to.x), Math.max(g.start.x, to.x)]
+      const [top, bottom] = [Math.min(g.start.y, to.y), Math.max(g.start.y, to.y)]
+      const inside = blocks.filter((b) => b.x >= left && b.x + BLOCK_WIDTH <= right && b.y >= top && b.y + BLOCK_HEIGHT <= bottom).map((b) => b.id)
+      onSelect?.(selectBlocks([...new Set([...g.base, ...inside])]))
     }
     if (g.type === 'connect') {
       const at = toWorld(e.clientX, e.clientY)
@@ -254,7 +297,8 @@ export function Canvas({
 
   const capture = (e: ReactPointerEvent) => ref.current!.setPointerCapture(e.pointerId)
 
-  const positioned = blocks.map((b) => (dragPos?.id === b.id ? { ...b, x: dragPos.x, y: dragPos.y } : b))
+  const positioned = blocks.map((b) => (dragOffset?.ids.has(b.id) ? { ...b, x: b.x + dragOffset.dx, y: b.y + dragOffset.dy } : b))
+  const selectedIds = new Set(selectedBlockIds(selection))
   const byId = new Map(positioned.map((b) => [b.id, b]))
   const rightPort = (b: CanvasBlock) => ({ x: b.x + BLOCK_WIDTH, y: b.y + PORT_Y })
   const leftPort = (b: CanvasBlock) => ({ x: b.x, y: b.y + PORT_Y })
@@ -263,7 +307,7 @@ export function Canvas({
     <section
       ref={ref}
       aria-label="Process canvas"
-      className={`relative flex-grow touch-none overflow-hidden bg-surface select-none ${pending ? 'cursor-crosshair' : ''}`}
+      className={`relative flex-grow touch-none overflow-hidden bg-surface select-none ${pending ? 'cursor-crosshair' : spaceHeld ? 'cursor-grab' : ''}`}
       style={{
         backgroundImage: 'radial-gradient(var(--color-canvas-dot) 1px, transparent 1px)',
         backgroundSize: `${20 * view.zoom}px ${20 * view.zoom}px`,
@@ -271,9 +315,15 @@ export function Canvas({
       }}
       onPointerDown={(e) => {
         if (menu && !(e.target as HTMLElement).closest('[role=menu]')) cancelWire()
-        if (e.button !== 0 || e.target !== e.currentTarget) return
+        if (e.target !== e.currentTarget) return
+        // Drag on empty canvas draws a selection box (Shift adds to the selection); Space+drag or the middle button pans.
+        const pan = e.button === 1 || (e.button === 0 && (spaceHeld || !onSelect))
+        if (!pan && e.button !== 0) return
+        e.preventDefault()
         capture(e)
-        gesture.current = { type: 'pan', start: { x: e.clientX, y: e.clientY }, origin: view, moved: false }
+        gesture.current = pan
+          ? { type: 'pan', start: { x: e.clientX, y: e.clientY }, origin: view, moved: false }
+          : { type: 'marquee', start: toWorld(e.clientX, e.clientY), base: e.shiftKey ? [...selectedIds] : [], moved: false }
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -312,7 +362,7 @@ export function Canvas({
             const target = byId.get(c.to)
             if (!source || !target) return null
             const d = connectorPath(rightPort(source), leftPort(target))
-            const selected = selection?.type === 'connection' && selection.id === c.id
+            const selected = (selection?.type === 'connection' && selection.id === c.id) || (selectedIds.has(c.from) && selectedIds.has(c.to) && selectedIds.size > 1)
             const stroke = selected ? 'var(--color-accent)' : 'var(--color-connector)'
             return (
               <g key={c.id}>
@@ -338,18 +388,41 @@ export function Canvas({
           )}
         </svg>
 
+        {marquee && (
+          <div
+            aria-hidden="true"
+            className="absolute rounded-sm border border-accent bg-accent/[8%]"
+            style={{
+              left: Math.min(marquee.from.x, marquee.to.x),
+              top: Math.min(marquee.from.y, marquee.to.y),
+              width: Math.abs(marquee.to.x - marquee.from.x),
+              height: Math.abs(marquee.to.y - marquee.from.y),
+              borderWidth: 1 / view.zoom,
+              zIndex: 20,
+            }}
+          />
+        )}
+
         {positioned.map((b) => (
           <div
             key={b.id}
             data-block-id={b.id}
-            className={`pointer-events-auto absolute ${onMoveBlock ? (dragPos?.id === b.id ? 'cursor-grabbing' : 'cursor-grab') : onSelect ? 'cursor-pointer' : ''}`}
+            className={`pointer-events-auto absolute ${onMoveBlock ? (dragOffset?.ids.has(b.id) ? 'cursor-grabbing' : 'cursor-grab') : onSelect ? 'cursor-pointer' : ''}`}
             style={{ left: b.x, top: b.y }}
             onPointerDown={(e) => {
-              if (e.button !== 0 || !onSelect) return
+              if (e.button !== 0 || !onSelect || spaceHeld) return
               e.stopPropagation()
+              if (e.shiftKey) {
+                // Shift+click adds the block to the selection, or takes it out.
+                const ids = selectedIds.has(b.id) ? [...selectedIds].filter((id) => id !== b.id) : [...selectedIds, b.id]
+                return onSelect(selectBlocks(ids))
+              }
               capture(e)
-              onSelect({ type: 'block', id: b.id })
-              if (onMoveBlock) gesture.current = { type: 'drag', id: b.id, start: { x: e.clientX, y: e.clientY }, origin: { x: b.x, y: b.y }, moved: false }
+              // Pressing a block that's part of a multi-selection drags the whole selection.
+              const group = selectedIds.size > 1 && selectedIds.has(b.id) ? [...selectedIds] : [b.id]
+              if (group.length === 1) onSelect({ type: 'block', id: b.id })
+              const origins = new Map(blocks.filter((x) => group.includes(x.id)).map((x) => [x.id, { x: x.x, y: x.y }]))
+              if (onMoveBlock) gesture.current = { type: 'drag', ids: group, start: { x: e.clientX, y: e.clientY }, origins, moved: false }
             }}
           >
             <BlockCard
@@ -358,7 +431,7 @@ export function Canvas({
               actor={b.actor}
               hotspots={b.hotspots}
               invariants={b.invariants}
-              selected={selection?.type === 'block' && selection.id === b.id}
+              selected={selectedIds.has(b.id)}
               editing={editingId === b.id}
               onTitleCommit={(title) => onRenameBlock?.(b.id, title)}
               onEditEnd={() => setEditingId(null)}

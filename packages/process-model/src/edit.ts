@@ -88,3 +88,34 @@ export function disconnect(board: Board, from: string, to: string): Board {
   const keep = (c: Connection) => !(c.from === from && c.to === to)
   return { ...board, connections: board.connections.filter(keep) }
 }
+
+/** The selected blocks and the connections between them, as a process of their own: what a copy puts on the clipboard. */
+export function extractBlocks(board: Board, ids: Iterable<string>): Board {
+  const keep = new Set(ids)
+  return {
+    ...board,
+    blocks: board.blocks.filter((b) => keep.has(b.id)),
+    connections: board.connections.filter((c) => keep.has(c.from) && keep.has(c.to)),
+  }
+}
+
+/**
+ * Appends another process's blocks and their connections (a paste). Each block gets a fresh id
+ * where its own is taken; `ids` maps each pasted block's old id to its new one.
+ */
+export function pasteBlocks(board: Board, fragment: Board): { board: Board; ids: Map<string, string> } {
+  const taken = new Set(board.blocks.map((b) => b.id))
+  const ids = new Map<string, string>()
+  const blocks = fragment.blocks.map((b) => {
+    const id = taken.has(b.id) ? newId(b.id, taken, b.kind) : b.id
+    taken.add(id)
+    ids.set(b.id, id)
+    return { ...b, id }
+  })
+  const connections = fragment.connections.flatMap((c) => {
+    const from = ids.get(c.from)
+    const to = ids.get(c.to)
+    return from && to ? [{ from, to }] : []
+  })
+  return { board: { ...board, blocks: [...board.blocks, ...blocks], connections: [...board.connections, ...connections] }, ids }
+}
