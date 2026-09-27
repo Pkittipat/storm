@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes } from 'react'
+import { useState, type FocusEvent, type InputHTMLAttributes, type KeyboardEvent } from 'react'
 
 interface EditableTextProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> {
   value: string
@@ -6,6 +6,8 @@ interface EditableTextProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   onCommit: (value: string) => void
   /** Reject an empty draft (revert instead of committing). */
   required?: boolean
+  /** Wrap onto as many lines as the text needs instead of scrolling sideways. Still one line of text: Enter commits. */
+  multiline?: boolean
 }
 
 /**
@@ -13,7 +15,7 @@ interface EditableTextProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
  * the surrounding type style via `className`. Edits are local until
  * blur/Enter so a keystroke never becomes a network write; Escape reverts.
  */
-export function EditableText({ value, onCommit, required, className = '', onBlur, onFocus, ...props }: EditableTextProps) {
+export function EditableText({ value, onCommit, required, multiline, className = '', onBlur, onFocus, ...props }: EditableTextProps) {
   const [draft, setDraft] = useState(value)
   // Adopt a new value from outside (e.g. a server resync) — React's "adjust state on prop change" pattern.
   const [synced, setSynced] = useState(value)
@@ -29,29 +31,37 @@ export function EditableText({ value, onCommit, required, className = '', onBlur
     else setDraft(value)
   }
 
-  return (
-    <input
-      type="text"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onFocus={(e) => {
-        // An auto-focused field is a fresh placeholder (new hotspot, new process…) — select it so typing replaces it.
-        if (props.autoFocus) e.currentTarget.select()
-        onFocus?.(e)
-      }}
-      onBlur={(e) => {
-        commit()
-        onBlur?.(e)
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur()
-        if (e.key === 'Escape') {
-          setDraft(value)
-          requestAnimationFrame(() => e.currentTarget?.blur())
-        }
-      }}
-      className={`min-w-0 rounded-md border-0 bg-transparent outline-none focus:bg-surface-raised focus:ring-1 focus:ring-border-input ${className}`}
-      {...props}
-    />
-  )
+  const shared = {
+    value: draft,
+    onChange: (e: { target: { value: string } }) => setDraft(e.target.value.replace(/\n/g, ' ')),
+    onFocus: (e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      // An auto-focused field is a fresh placeholder (new hotspot, new process…) — select it so typing replaces it.
+      if (props.autoFocus) e.currentTarget.select()
+      onFocus?.(e as FocusEvent<HTMLInputElement>)
+    },
+    onBlur: (e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      commit()
+      onBlur?.(e as FocusEvent<HTMLInputElement>)
+    },
+    onKeyDown: (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        e.currentTarget.blur()
+      }
+      if (e.key === 'Escape') {
+        setDraft(value)
+        const el = e.currentTarget
+        requestAnimationFrame(() => el?.blur())
+      }
+    },
+    className: `min-w-0 rounded-md border-0 bg-transparent outline-none focus:bg-surface-raised focus:ring-1 focus:ring-border-input ${
+      multiline ? 'block resize-none overflow-hidden [field-sizing:content] break-words' : ''
+    } ${className}`,
+  }
+
+  if (multiline) {
+    const { autoFocus, placeholder, disabled, id, name, 'aria-label': ariaLabel } = props
+    return <textarea rows={1} autoFocus={autoFocus} placeholder={placeholder} disabled={disabled} id={id} name={name} aria-label={ariaLabel} {...shared} />
+  }
+  return <input type="text" {...props} {...shared} />
 }

@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from 'react'
 import { Chip } from './Chip'
 import { TypeSwatch } from './TypeSwatch'
 import { blockKindClasses, blockKindLabel, type BlockKind } from './types'
@@ -21,7 +21,7 @@ interface BlockCardProps {
 }
 
 /**
- * The core unit of the process canvas — a 140×104 card representing one
+ * The core unit of the process canvas — a 140×104 card (a long title shrinks to fit rather than being cut off) representing one
  * of the five domain concepts. Selection is accent-driven, not type-
  * driven: a selected card always gets a 1.5px accent border + a
  * ring-accent/[14%] glow, regardless of `kind` (its own `-line` border
@@ -47,7 +47,7 @@ export function BlockCard({ kind, title, selected = false, actor, hotspots, edit
         {editing ? (
           <TitleEditor title={title} onCommit={(t) => onTitleCommit?.(t)} onDone={() => onEditEnd?.()} />
         ) : (
-          <div className="line-clamp-2 text-emphasis font-semibold break-words text-text">{title}</div>
+          <FitTitle title={title} />
         )}
         {actor || hotspots ? (
           <div className="mt-auto flex gap-step-2xs">
@@ -62,9 +62,35 @@ export function BlockCard({ kind, title, selected = false, actor, hotspots, edit
   )
 }
 
-/** The card's title as a two-line text box; the pointer stays in it (no drag or pan while editing). */
+const TITLE_MAX_PX = 15 // --text-emphasis
+const TITLE_MIN_PX = 8
+
+/** Steps the font size down until the text fits its box, so the card keeps its size and nothing is cut off. */
+function useFitText(ref: RefObject<HTMLElement | null>, text: string) {
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let size = TITLE_MAX_PX
+    el.style.fontSize = `${size}px`
+    while (el.scrollHeight > el.clientHeight && size > TITLE_MIN_PX) el.style.fontSize = `${--size}px`
+  }, [ref, text])
+}
+
+function FitTitle({ title }: { title: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useFitText(ref, title)
+  return (
+    <div ref={ref} className="min-h-0 flex-1 overflow-hidden text-emphasis font-semibold break-words text-text">
+      {title}
+    </div>
+  )
+}
+
+/** The card's title, edited in place: same type and color as the title, no box of its own, shrinking to fit like the title does. The pointer stays in it (no drag or pan while editing). */
 function TitleEditor({ title, onCommit, onDone }: { title: string; onCommit: (title: string) => void; onDone: () => void }) {
   const [draft, setDraft] = useState(title)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useFitText(ref, draft)
   // Enter/Escape end it; the blur that follows as it unmounts must not commit a second time.
   const done = useRef(false)
   const finish = (commit: boolean) => {
@@ -76,9 +102,9 @@ function TitleEditor({ title, onCommit, onDone }: { title: string; onCommit: (ti
   }
   return (
     <textarea
+      ref={ref}
       aria-label="Block title"
       autoFocus
-      rows={2}
       value={draft}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => setDraft(e.target.value.replace(/\n/g, ' '))}
@@ -92,7 +118,7 @@ function TitleEditor({ title, onCommit, onDone }: { title: string; onCommit: (ti
         }
         if (e.key === 'Escape') finish(false)
       }}
-      className="-mx-1 -my-0.5 resize-none rounded-md border-0 bg-surface-raised px-1 py-0.5 font-sans text-emphasis font-semibold text-text ring-1 ring-border-input outline-none"
+      className="m-0 block min-h-0 w-full flex-1 resize-none overflow-hidden border-0 bg-transparent p-0 font-sans text-emphasis font-semibold break-words text-text caret-accent outline-none"
     />
   )
 }

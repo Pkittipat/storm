@@ -35,6 +35,7 @@ export function Inspector({ block, board, onChange, onDelete, onSelectBlock, onC
           aria-label="Block title"
           value={block.title}
           required
+          multiline
           onCommit={(title) => onChange({ title })}
           className="-mx-1 w-full px-1"
         />
@@ -107,10 +108,10 @@ export function Inspector({ block, board, onChange, onDelete, onSelectBlock, onC
                   key={f.id}
                   type="button"
                   onClick={() => onSelectBlock(f.block.id)}
-                  className="flex h-control-md items-center gap-step-lg rounded-lg border-0 bg-transparent px-step-md text-left text-body text-text"
+                  className="flex min-h-control-md items-center gap-step-lg rounded-lg border-0 bg-transparent px-step-md py-step-xs text-left text-body text-text"
                 >
                   <TypeSwatch kind={f.block.kind} size="sm" />
-                  <span className="flex-grow truncate">{f.block.title}</span>
+                  <span className="min-w-0 flex-grow break-words">{f.block.title}</span>
                   <span className="text-meta text-text-muted">{f.dir}</span>
                 </button>
               ))}
