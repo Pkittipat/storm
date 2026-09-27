@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ProcessSummary, Project } from './api'
+import type { ProcessSummary, Project } from './storage'
 import {
   EditableText,
   IconButton,
@@ -41,7 +41,6 @@ interface ProcessNavProps {
   onNewProject: () => Promise<Project | undefined>
   onRenameProject: (id: string, name: string) => void
   onDeleteProject: (project: Project) => void
-  onConnectGithub: (projectId: string) => void
 }
 
 /**
@@ -61,7 +60,6 @@ export function ProcessNav({
   onNewProject,
   onRenameProject,
   onDeleteProject,
-  onConnectGithub,
 }: ProcessNavProps) {
   const [collapsed, setCollapsed] = useState(() => new Set(stored<string[]>('stormm.collapsedProjects', [])))
   const [sort, setSort] = useState<Sort>(() => stored<Sort>('stormm.processSort', 'created'))
@@ -248,11 +246,10 @@ export function ProcessNav({
       {processes && searching && !groups.length && !loose.length && <Empty>No matches</Empty>}
 
       {projectContext && (
-        <FloatingMenu {...projectContext} label={`${projectContext.project.name} options`} rows={3} onClose={closeProjectContext}>
+        <FloatingMenu {...projectContext} label={`${projectContext.project.name} options`} rows={2} onClose={closeProjectContext}>
           {(pick) => (
             <>
               <MenuItem onClick={pick(() => setRenamingId(projectContext.project.id))}>Rename</MenuItem>
-              <MenuItem onClick={pick(() => onConnectGithub(projectContext.project.id))}>Connect GitHub</MenuItem>
               <MenuItem danger onClick={pick(() => onDeleteProject(projectContext.project))}>
                 Delete project
               </MenuItem>

@@ -1,14 +1,6 @@
 # Stormm process YAML — schema v1
 
-A process is stored in the customer's GitHub repository as one file:
-
-```
-stormm/
-  processes/
-    checkout.yaml
-```
-
-The file on `main` is the agreed process. Changes arrive as pull requests that edit this file.
+A process is one YAML document, e.g. `checkout.yaml` (the file name is the process ID).
 It holds business meaning only — no positions, no layout file.
 
 ## Example
@@ -81,21 +73,26 @@ Optional keys are omitted when empty.
 ## Rules
 
 - **Stable IDs.** Renaming changes `title`/`name`, never `id`. Diffs are computed by ID.
-  One exception: a block that hasn't reached the agreed version yet keeps its ID in step with its title, so a block added as "New policy" and named "Reserve stock" becomes `reserve-stock`. Until GitHub is connected, "not yet agreed" means "added in the current editing session"; once the page reloads, the ID is frozen.
+  One exception: a block added in the current editing session keeps its ID in step with its title, so a block added as "New policy" and named "Reserve stock" becomes `reserve-stock`. Once the page reloads, the ID is frozen.
 - **Canonical output.** Fixed key order and formatting; the same model always serializes to the same bytes.
-- **Stable order.** Blocks and connections keep their order from `main`; new items are appended.
+- **Stable order.** Blocks and connections keep their order; new items are appended.
 - **Repeat a concept when that reads better.** A second `Order` aggregate (`order-2`) can keep two chains apart instead of joining them through one shared block.
 
-## Storage and saving (until GitHub is connected)
+## Storage and saving
 
-A local folder stands in for the connected repositories: `repos/<project>/stormm/processes/<id>.yaml`, with processes outside any project under `repos/_no-project/`. The file name is the process ID.
+Processes live in the browser's `localStorage`; there is no server.
 
-- **Whole-file saves.** The editor sends the whole YAML plus the version it was based on: the file's git blob SHA, which is also what GitHub's contents API uses.
-- **No silent overwrites.** If the file changed since that version, the save is refused (409) and the editor offers Reload.
-- **Errors block saving; warnings don't.** A file with errors, or whose `id` doesn't match its file name, is refused (422).
-- **Canonical on disk.** Whatever formatting was sent, the file is stored in canonical form.
+- `stormm:process:<id>` → the process YAML, canonical form. The key's ID is the process ID.
+- `stormm:processes` → `[{ "id": "checkout", "projectId": null }]`, the list in creation order; `projectId` files the process under a project (`null` = No project).
+- `stormm:projects` → `[{ "id": "shop", "name": "Shop" }]`.
+
+- **Whole-file saves.** Every edit writes the whole YAML back at once. Last write wins; two tabs editing the same process overwrite each other.
+- **Canonical in storage.** The YAML is always written in canonical form.
+- **Errors don't block saving.** Validation errors and warnings show in the YAML panel; the file is saved either way.
+- **ID mismatch is an error.** A stored YAML whose `id` doesn't match its key is reported as an error.
 - **New processes** start with no blocks.
-- **Hand-broken files** still appear in the list and show their parse errors when opened.
+- **Hand-broken YAML** still appears in the list and shows its parse errors when opened.
+- **Nothing leaves the browser.** Download the YAML to keep or share a process; clearing site data deletes it.
 
 ## Layout (derived, never stored)
 
@@ -106,15 +103,14 @@ A local folder stands in for the connected repositories: `repos/<project>/stormm
 
 ### Dragged positions (per browser)
 
-Dragging is a personal view preference. It is kept in the browser's `localStorage`, never in the YAML, the PR, or Stormm's database.
+Dragging is a personal view preference. It is kept in `localStorage` separately from the process, never in the YAML.
 
 - Key: `stormm:layout:<process id>` → `{ "<block id>": { "x": 0, "y": 0 } }` (absolute canvas coordinates).
 - On load, a block uses its saved position if one exists; otherwise its derived position.
-- Keyed by block ID, so a dragged block keeps its place across renames, drafts and merged changes. Positions for block IDs no longer in the file are dropped.
+- Keyed by block ID, so a dragged block keeps its place across renames. Positions for block IDs no longer in the file are dropped.
 - New blocks always appear at their derived position, even if dragged blocks now sit nearby.
 - **Reset layout** clears the process's saved positions and returns every block to its derived position.
 - If `localStorage` is unavailable (private window, cleared data), the derived layout is used; nothing breaks.
-- The change review screen ignores saved positions: before and after are both drawn from the derived layout, so every reviewer sees the same picture.
 
 ## Validation
 

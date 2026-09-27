@@ -27,7 +27,7 @@ function write(processId: string, positions: Positions) {
 
 /**
  * Where this viewer dragged blocks to, per process and block id. A personal view preference:
- * it lives only in this browser's localStorage — never in the YAML, the PR or the server —
+ * it lives in this browser's localStorage next to the process, never in the YAML itself,
  * and any block without an entry sits at its derived position.
  */
 export function useDraggedPositions(processId: string | null, blockIds: readonly string[] | null) {

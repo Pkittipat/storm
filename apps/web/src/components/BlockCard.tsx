@@ -1,14 +1,7 @@
-import type { ChangeStatus } from '@stormm/process-model'
-import type { PointerEvent } from 'react'
+import { useRef, useState, type PointerEvent } from 'react'
 import { Chip } from './Chip'
 import { TypeSwatch } from './TypeSwatch'
 import { blockKindClasses, blockKindLabel, type BlockKind } from './types'
-
-const diffBorderClasses: Record<ChangeStatus, string> = {
-  added: 'border-[1.5px] border-diff-add',
-  removed: 'border-[1.5px] border-hotspot-text border-dashed opacity-70',
-  changed: 'border-[1.5px] border-diff-change',
-}
 
 interface BlockCardProps {
   kind: BlockKind
@@ -17,8 +10,10 @@ interface BlockCardProps {
   /** Who performs this step (e.g. "Customer") — an attribute of the block, never a block of its own. */
   actor?: string | null
   hotspots?: number
-  /** In review mode, marks this block as added/removed/changed instead of its normal kind-colored border. */
-  diffStatus?: ChangeStatus
+  /** Shows the title as a text box (double-click on the canvas); Enter or blur commits, Escape cancels. */
+  editing?: boolean
+  onTitleCommit?: (title: string) => void
+  onEditEnd?: () => void
   /** Makes the right-hand port a drag handle for drawing an outgoing connection. */
   onConnectStart?: (e: PointerEvent<HTMLSpanElement>) => void
   /** Absolutely-positions the card on a canvas. Omit to let it flow inline (as in a palette/showcase). */
@@ -36,10 +31,10 @@ interface BlockCardProps {
  * absolutely on a canvas surface (the parent must be `position:
  * relative`).
  */
-export function BlockCard({ kind, title, selected = false, actor, hotspots, diffStatus, onConnectStart, position }: BlockCardProps) {
+export function BlockCard({ kind, title, selected = false, actor, hotspots, editing, onTitleCommit, onEditEnd, onConnectStart, position }: BlockCardProps) {
   const { surface, line } = blockKindClasses[kind]
   const portClass = selected ? 'border-accent' : 'border-port'
-  const border = diffStatus ? diffBorderClasses[diffStatus] : selected ? 'border-[1.5px] border-accent' : line
+  const border = selected ? 'border-[1.5px] border-accent' : line
   const ring = selected ? 'ring-4 ring-accent/[14%]' : ''
 
   return (
@@ -49,7 +44,11 @@ export function BlockCard({ kind, title, selected = false, actor, hotspots, diff
         {blockKindLabel[kind]}
       </div>
       <div className={`relative box-border flex h-node-height w-node-width flex-col gap-step-xs rounded-node border p-step-lg ${surface} ${border} ${ring}`}>
-        <div className="line-clamp-2 text-emphasis font-semibold break-words text-text">{title}</div>
+        {editing ? (
+          <TitleEditor title={title} onCommit={(t) => onTitleCommit?.(t)} onDone={() => onEditEnd?.()} />
+        ) : (
+          <div className="line-clamp-2 text-emphasis font-semibold break-words text-text">{title}</div>
+        )}
         {actor || hotspots ? (
           <div className="mt-auto flex gap-step-2xs">
             {actor && <Chip variant="actor">{actor}</Chip>}
@@ -60,6 +59,41 @@ export function BlockCard({ kind, title, selected = false, actor, hotspots, diff
         <Port className={portClass} side="right" onPointerDown={onConnectStart} />
       </div>
     </div>
+  )
+}
+
+/** The card's title as a two-line text box; the pointer stays in it (no drag or pan while editing). */
+function TitleEditor({ title, onCommit, onDone }: { title: string; onCommit: (title: string) => void; onDone: () => void }) {
+  const [draft, setDraft] = useState(title)
+  // Enter/Escape end it; the blur that follows as it unmounts must not commit a second time.
+  const done = useRef(false)
+  const finish = (commit: boolean) => {
+    if (done.current) return
+    done.current = true
+    const next = draft.trim()
+    if (commit && next && next !== title) onCommit(next)
+    onDone()
+  }
+  return (
+    <textarea
+      aria-label="Block title"
+      autoFocus
+      rows={2}
+      value={draft}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setDraft(e.target.value.replace(/\n/g, ' '))}
+      onPointerDown={(e) => e.stopPropagation()}
+      onBlur={() => finish(true)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          finish(true)
+        }
+        if (e.key === 'Escape') finish(false)
+      }}
+      className="-mx-1 -my-0.5 resize-none rounded-md border-0 bg-surface-raised px-1 py-0.5 font-sans text-emphasis font-semibold text-text ring-1 ring-border-input outline-none"
+    />
   )
 }
 

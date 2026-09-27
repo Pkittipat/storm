@@ -13,48 +13,6 @@
         "--strictPort"
       ],
       "port": 5175
-    },
-    {
-      "name": "api",
-      "runtimeExecutable": "/Users/oll/.npm-global/bin/pnpm",
-      "runtimeArgs": [
-        "--filter",
-        "api",
-        "start:dev"
-      ],
-      "port": 3000
-    },
-    {
-      "name": "prisma-studio",
-      "runtimeExecutable": "/Users/oll/.npm-global/bin/pnpm",
-      "runtimeArgs": [
-        "--filter",
-        "api",
-        "prisma:studio",
-        "--port",
-        "5555",
-        "--browser",
-        "none"
-      ],
-      "port": 5555
-    },
-    {
-      "name": "api-alt",
-      "runtimeExecutable": "/bin/sh",
-      "runtimeArgs": [
-        "-c",
-        "PATH=/Users/oll/.npm-global/bin:$PATH PORT=3001 CORS_ORIGIN=http://localhost:5176 exec /Users/oll/.npm-global/bin/pnpm --filter api start:dev"
-      ],
-      "port": 3001
-    },
-    {
-      "name": "web-alt",
-      "runtimeExecutable": "/bin/sh",
-      "runtimeArgs": [
-        "-c",
-        "PATH=/Users/oll/.npm-global/bin:$PATH API_URL=http://localhost:3001 exec /Users/oll/.npm-global/bin/pnpm --filter web dev --port 5176 --strictPort"
-      ],
-      "port": 5176
     }
   ]
 }

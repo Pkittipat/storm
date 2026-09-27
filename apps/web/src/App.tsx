@@ -1,12 +1,9 @@
 import {
   addBlock as addBlockTo,
-  blockStatus,
   connect as connectBlocks,
-  diffBoards as computeBoardDiff,
   disconnect,
   findBlock,
   layoutBoard,
-  parseBoard,
   removeBlock,
   renameBoard,
   retitleNewBlock,
@@ -17,15 +14,13 @@ import {
   type Board,
 } from '@stormm/process-model'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, type ProcessDiff, type ProcessSummary, type Project } from './api'
 import { Canvas, type CanvasBlock, type CanvasConnection, type Selection, type Viewport } from './canvas/Canvas'
-import { ChangeDetail } from './canvas/ChangeDetail'
-import { ChangesList } from './canvas/ChangesList'
 import { LAYOUT } from './canvas/geometry'
 import { Inspector } from './canvas/Inspector'
 import { YamlPanel } from './canvas/YamlPanel'
 import { Button, Composer, EditableText, Header, IconButton, Sidebar, blockKindLabel, type BlockKind } from './components'
 import { ProcessNav } from './ProcessNav'
+import { storage, type ProcessSummary, type Project } from './storage'
 import { useDraggedPositions } from './useDraggedPositions'
 import { useProcess, type SaveState } from './useProcess'
 
@@ -40,33 +35,42 @@ const readSidebarHidden = () => {
   }
 }
 
+// Storage can be unavailable (blocked site data); the app then starts empty.
+const readProcesses = () => {
+  try {
+    return storage.listProcesses()
+  } catch {
+    return []
+  }
+}
+const readProjects = () => {
+  try {
+    return storage.listProjects()
+  } catch {
+    return []
+  }
+}
+
 const processIdFromHash = () => window.location.hash.match(/^#\/p\/([^/]+)/)?.[1] ?? null
 
 const SAVE_LABEL: Record<SaveState, string> = {
-  saved: 'Saved',
-  saving: 'Saving…',
+  saved: 'Saved in this browser',
   failed: 'Not saved',
-  conflict: 'Changed elsewhere',
 }
 
 function App() {
-  const [processes, setProcesses] = useState<ProcessSummary[] | null>(null)
-  const [projects, setProjects] = useState<Project[]>([])
+  const [processes, setProcesses] = useState<ProcessSummary[] | null>(readProcesses)
+  const [projects, setProjects] = useState<Project[]>(readProjects)
   const [sidebarHidden, setSidebarHidden] = useState(readSidebarHidden)
   const [processId, setProcessId] = useState(processIdFromHash)
   const [selection, setSelection] = useState<Selection>(null)
   const [yamlOpen, setYamlOpen] = useState(false)
-  const [reviewOpen, setReviewOpen] = useState(false)
-  const [diff, setDiff] = useState<ProcessDiff | null>(null)
-  const [changeSelection, setChangeSelection] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'requesting' | 'accepting' | null>(null)
   const [viewport, setViewport] = useState(INITIAL_VIEWPORT)
-  const [reviewViewport, setReviewViewport] = useState(INITIAL_VIEWPORT)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [renaming, setRenaming] = useState(false)
   /**
    * Blocks added in this session. Their ids still follow their titles; once the page is
-   * reloaded they are part of the agreed file and their ids are frozen.
+   * reloaded their ids are frozen.
    */
   const fresh = useRef({ processId, blocks: new Set<string>() })
   const freshIds = () => {
@@ -75,7 +79,7 @@ function App() {
   }
 
   const fail = useCallback((e: unknown) => setNotice({ text: e instanceof Error ? e.message : String(e), error: true }), [])
-  const { open, loadError, saveState, edit, reload, setProjectId } = useProcess(processId, fail)
+  const { open, loadError, saveState, edit, setProjectId } = useProcess(processId, fail)
   const board: Board | null = open?.id === processId ? open.board : null
 
   useEffect(() => {
@@ -83,44 +87,6 @@ function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
-
-  useEffect(() => {
-    api.listProcesses().then(setProcesses, fail)
-    api.listProjects().then(setProjects, fail)
-  }, [fail])
-
-  // Back from the GitHub install screen: #/?github=connected|cancelled[&project=<id>], or
-  // #/?github=choose&project=<id>&installation=<id>&repos=<owner/repo,...> when the
-  // installation covers more than one repo and GitHub gave us no way to pre-pick just one.
-  // Only ever runs once — the "no process in the URL" effect below overwrites the hash next.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
-    const status = params.get('github')
-    if (!status) return
-    if (status === 'connected') {
-      setNotice({ text: 'Connected to GitHub' })
-    } else if (status === 'choose') {
-      const projectId = params.get('project')
-      const installationId = params.get('installation')
-      const repos = params.get('repos')?.split(',') ?? []
-      if (!projectId || !installationId || repos.length === 0) {
-        setNotice({ text: 'GitHub connection failed', error: true })
-        return
-      }
-      const choice = window.prompt(`This installation covers more than one repo. Which one is this project?\n\n${repos.join('\n')}`, repos[0])
-      const [owner, repo] = (choice ?? '').split('/')
-      if (!owner || !repo || !repos.includes(choice!)) {
-        setNotice({ text: 'GitHub connection cancelled', error: true })
-        return
-      }
-      api.chooseGithubRepo(projectId, installationId, owner, repo).then(
-        () => setNotice({ text: 'Connected to GitHub' }),
-        fail,
-      )
-    } else {
-      setNotice({ text: 'GitHub connection cancelled', error: true })
-    }
-  }, [fail])
 
   const toggleSidebar = (hidden: boolean) => {
     setSidebarHidden(hidden)
@@ -142,9 +108,6 @@ function App() {
     setViewFor(processId)
     setSelection(null)
     setViewport(INITIAL_VIEWPORT)
-    setReviewOpen(false)
-    setDiff(null)
-    setChangeSelection(null)
   }
 
   useEffect(() => {
@@ -168,74 +131,6 @@ function App() {
     () => processes?.map((p) => (p.id === board?.id ? { ...p, name: board.name } : p)) ?? null,
     [processes, board?.id, board?.name],
   )
-
-  // Parses the diff's before/after YAML into boards for the review view; falls back to
-  // the raw text patch (rendered by ChangesList) if either side doesn't parse.
-  const diffPreview = useMemo(() => {
-    if (!diff?.beforeYaml || !diff.afterYaml) return null
-    const before = parseBoard(diff.beforeYaml).board
-    const after = parseBoard(diff.afterYaml).board
-    return before && after ? { before, after } : null
-  }, [diff])
-
-  const boardDiff = useMemo(() => (diffPreview ? computeBoardDiff(diffPreview.before, diffPreview.after) : null), [diffPreview])
-
-  // Auto-select the first changed block the moment a diff loads, so ChangeDetail isn't
-  // empty at first — but only once per fetch, or closing it would just reselect it right back.
-  const autoSelectedFor = useRef<ProcessDiff | null>(null)
-  useEffect(() => {
-    if (!boardDiff || !diff || autoSelectedFor.current === diff) return
-    autoSelectedFor.current = diff
-    const first = boardDiff.blocks.removed[0] ?? boardDiff.blocks.changed[0]?.after ?? boardDiff.blocks.added[0]
-    if (first) setChangeSelection(first.id)
-  }, [boardDiff, diff])
-
-  const selectedChange = useMemo(() => {
-    if (!changeSelection || !boardDiff) return null
-    const added = boardDiff.blocks.added.find((b) => b.id === changeSelection)
-    if (added) return { status: 'added' as const, after: added }
-    const removed = boardDiff.blocks.removed.find((b) => b.id === changeSelection)
-    if (removed) return { status: 'removed' as const, before: removed }
-    const changed = boardDiff.blocks.changed.find((c) => c.after.id === changeSelection)
-    if (changed) return { status: 'changed' as const, before: changed.before, after: changed.after, changes: changed.changes }
-    return null
-  }, [changeSelection, boardDiff])
-
-  // The review canvas shows the current (after) state plus any removed blocks, so a
-  // deletion is visible rather than just vanishing — one board, one layout, colored by status.
-  const reviewLayout = useMemo(() => {
-    if (!diffPreview || !boardDiff) return null
-    const merged: Board = {
-      ...diffPreview.after,
-      blocks: [...diffPreview.after.blocks, ...boardDiff.blocks.removed],
-      connections: [...diffPreview.after.connections, ...boardDiff.connections.removed],
-    }
-    return layoutBoard(merged, LAYOUT)
-  }, [diffPreview, boardDiff])
-
-  const reviewCanvasBlocks: CanvasBlock[] = useMemo(() => {
-    if (!diffPreview || !boardDiff || !reviewLayout) return []
-    const statusById = blockStatus(boardDiff)
-    return [...diffPreview.after.blocks, ...boardDiff.blocks.removed].map((b) => ({
-      id: b.id,
-      kind: b.kind,
-      title: b.title,
-      actor: b.actor,
-      hotspots: b.hotspots.length,
-      diffStatus: statusById.get(b.id),
-      ...(reviewLayout.positions.get(b.id) ?? { x: 0, y: 0 }),
-    }))
-  }, [diffPreview, boardDiff, reviewLayout])
-
-  const reviewCanvasConnections: CanvasConnection[] = useMemo(() => {
-    if (!diffPreview || !boardDiff) return []
-    const addedKeys = new Set(boardDiff.connections.added.map((c) => `${c.from}->${c.to}`))
-    const removedKeys = new Set(boardDiff.connections.removed.map((c) => `${c.from}->${c.to}`))
-    return [...diffPreview.after.connections, ...boardDiff.connections.removed].map((c) => {
-      const key = `${c.from}->${c.to}`
-      return { id: key, from: c.from, to: c.to, diffStatus: addedKeys.has(key) ? 'added' : removedKeys.has(key) ? 'removed' : undefined }
-    })
-  }, [diffPreview, boardDiff])
 
   const canvasBlocks: CanvasBlock[] = useMemo(() => {
     if (!board || !layout) return []
@@ -309,9 +204,9 @@ function App() {
 
   // ── Processes and projects ───────────────────────────────────────────────
 
-  const createProcess = async (projectId: string | null = null) => {
+  const createProcess = (projectId: string | null = null) => {
     try {
-      const created = await api.createProcess('Untitled process', projectId)
+      const created = storage.createProcess('Untitled process', projectId)
       setProcesses((ps) => [...(ps ?? []), { id: created.board.id, name: created.board.name, projectId: created.projectId }])
       setRenaming(true)
       window.location.hash = `#/p/${created.board.id}`
@@ -328,17 +223,18 @@ function App() {
   }
 
   const moveProcess = (id: string, projectId: string | null) => {
-    setProcesses((ps) => ps?.map((p) => (p.id === id ? { ...p, projectId } : p)) ?? ps)
-    if (id === processId) setProjectId(projectId)
-    api.moveProcess(id, projectId).catch((e) => {
+    try {
+      storage.moveProcess(id, projectId)
+      setProcesses((ps) => ps?.map((p) => (p.id === id ? { ...p, projectId } : p)) ?? ps)
+      if (id === processId) setProjectId(projectId)
+    } catch (e) {
       fail(e)
-      api.listProcesses().then(setProcesses, fail)
-    })
+    }
   }
 
   const createProject = async () => {
     try {
-      const project = await api.createProject('Untitled project')
+      const project = storage.createProject('Untitled project')
       setProjects((ps) => [...ps, project])
       return project
     } catch (e) {
@@ -347,18 +243,19 @@ function App() {
   }
 
   const renameProject = (id: string, name: string) => {
-    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p)))
-    api.renameProject(id, name).catch((e) => {
+    try {
+      storage.renameProject(id, name)
+      setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p)))
+    } catch (e) {
       fail(e)
-      api.listProjects().then(setProjects, fail)
-    })
+    }
   }
 
   /** Its processes are kept and move to "No project". */
-  const deleteProject = async (project: Project) => {
+  const deleteProject = (project: Project) => {
     if (!window.confirm(`Delete the “${project.name}” project? Its processes move to No project.`)) return
     try {
-      await api.deleteProject(project.id)
+      storage.deleteProject(project.id)
       setProjects((ps) => ps.filter((p) => p.id !== project.id))
       setProcesses((ps) => ps?.map((p) => (p.projectId === project.id ? { ...p, projectId: null } : p)) ?? ps)
       if (open?.projectId === project.id) setProjectId(null)
@@ -367,56 +264,10 @@ function App() {
     }
   }
 
-  /**
-   * One "Connect GitHub" action that figures out the right path itself: if any GitHub
-   * installation is already known (linked to some other project), asks whether to reuse
-   * one — GitHub's own install screen only shows a confirm step when there's an actual
-   * new grant to make, so re-running it when the access already exists just strands the
-   * browser on GitHub's settings page with no way back. New repo access still goes
-   * through GitHub for real; reusing an existing one is resolved locally instead.
-   */
-  const connectGithub = async (projectId: string) => {
+  const deleteProcess = () => {
+    if (!board || !window.confirm(`Delete “${board.name}”? It is only stored in this browser.`)) return
     try {
-      const installations = await api.listGithubInstallations()
-      const useExisting =
-        installations.length > 0 &&
-        window.confirm('Use an already-connected GitHub repo for this project? Cancel to connect a new one instead.')
-      if (!useExisting) {
-        window.location.href = `/api/projects/${projectId}/github/connect`
-        return
-      }
-
-      const installationId =
-        installations.length === 1
-          ? installations[0].installationId
-          : (() => {
-              const options = installations.map((i) => `${i.installationId} (${i.owner})`)
-              const choice = window.prompt(`Which installation?\n\n${options.join('\n')}`, options[0])
-              return installations.find((i) => `${i.installationId} (${i.owner})` === choice)?.installationId ?? null
-            })()
-      if (!installationId) return
-
-      const repos = await api.listGithubRepos(installationId)
-      if (repos.length === 0) {
-        window.alert('That installation has no repos accessible to it right now.')
-        return
-      }
-      const names = repos.map((r) => `${r.owner}/${r.repo}`)
-      const choice = repos.length === 1 ? names[0] : window.prompt(`Which repo?\n\n${names.join('\n')}`, names[0])
-      const picked = repos.find((r) => `${r.owner}/${r.repo}` === choice)
-      if (!picked) return
-
-      await api.chooseGithubRepo(projectId, installationId, picked.owner, picked.repo)
-      setNotice({ text: 'Connected to GitHub' })
-    } catch (e) {
-      fail(e)
-    }
-  }
-
-  const deleteProcess = async () => {
-    if (!board || !window.confirm(`Delete “${board.name}” and its YAML file?`)) return
-    try {
-      await api.deleteProcess(board.id)
+      storage.deleteProcess(board.id)
       const rest = (processes ?? []).filter((p) => p.id !== board.id)
       setProcesses(rest)
       window.location.hash = rest.length ? `#/p/${rest[0].id}` : ''
@@ -434,48 +285,6 @@ function App() {
   }
 
   const copyYaml = () => navigator.clipboard.writeText(yaml).then(() => setNotice({ text: 'YAML copied' }), fail)
-
-  const share = () =>
-    navigator.clipboard.writeText(window.location.href).then(() => setNotice({ text: 'Link copied' }), fail)
-
-  const openReview = () => {
-    if (!board) return
-    setYamlOpen(false)
-    setReviewOpen(true)
-    setDiff(null)
-    setChangeSelection(null)
-    setReviewViewport(INITIAL_VIEWPORT)
-    api.diffProcess(board.id).then(setDiff, fail)
-  }
-
-  const requestChange = async () => {
-    if (!board) return
-    setBusy('requesting')
-    try {
-      await api.requestChange(board.id)
-      setDiff(await api.diffProcess(board.id))
-    } catch (e) {
-      fail(e)
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const acceptChanges = async () => {
-    if (!board) return
-    setBusy('accepting')
-    try {
-      await api.acceptProcess(board.id)
-      setNotice({ text: 'Changes accepted' })
-      setReviewOpen(false)
-      setChangeSelection(null)
-      reload()
-    } catch (e) {
-      fail(e)
-    } finally {
-      setBusy(null)
-    }
-  }
 
   // Delete/Backspace removes the selection; Escape clears it. Ignored while typing.
   useEffect(() => {
@@ -509,7 +318,6 @@ function App() {
             onNewProject={createProject}
             onRenameProject={renameProject}
             onDeleteProject={deleteProject}
-            onConnectGithub={connectGithub}
           />
         </Sidebar>
       )}
@@ -545,31 +353,17 @@ function App() {
                     {notice.text}
                   </span>
                 ) : (
-                  <span role="status" className={`mr-step-sm text-meta ${saveState === 'saved' || saveState === 'saving' ? 'text-text-muted' : 'text-hotspot-text'}`}>
+                  <span role="status" className={`mr-step-sm text-meta ${saveState === 'saved' ? 'text-text-muted' : 'text-hotspot-text'}`}>
                     {SAVE_LABEL[saveState]}
                   </span>
-                )}
-                {saveState === 'conflict' && (
-                  <Button variant="secondary" onClick={reload}>
-                    Reload
-                  </Button>
                 )}
                 <Button variant="secondary" onClick={deleteProcess}>
                   Delete
                 </Button>
-                <Button variant="secondary" onClick={share}>
-                  Share
-                </Button>
-                <Button variant="secondary" aria-pressed={reviewOpen} onClick={() => (reviewOpen ? setReviewOpen(false) : openReview())}>
-                  Review changes
-                </Button>
                 <Button
                   variant="primary"
                   aria-pressed={yamlOpen}
-                  onClick={() => {
-                    setReviewOpen(false)
-                    setYamlOpen((o) => !o)
-                  }}
+                  onClick={() => setYamlOpen((o) => !o)}
                 >
                   YAML
                   {errorCount > 0 && <span className="rounded-full bg-hotspot-surface px-1.5 text-chip text-hotspot-text">{errorCount}</span>}
@@ -580,28 +374,7 @@ function App() {
         />
 
         <div className="relative flex min-h-0 flex-grow">
-          {reviewOpen && (
-            <ChangesList
-              diff={diff}
-              boardDiff={boardDiff}
-              busy={busy}
-              selectedId={changeSelection}
-              onSelect={setChangeSelection}
-              onRequest={requestChange}
-              onAccept={acceptChanges}
-              onClose={() => setReviewOpen(false)}
-            />
-          )}
-          {reviewOpen && diffPreview ? (
-            <Canvas
-              blocks={reviewCanvasBlocks}
-              connections={reviewCanvasConnections}
-              selection={changeSelection ? { type: 'block', id: changeSelection } : null}
-              viewport={reviewViewport}
-              onViewportChange={setReviewViewport}
-              onSelect={(s) => setChangeSelection(s?.type === 'block' ? s.id : null)}
-            />
-          ) : board && layout ? (
+          {board && layout ? (
             <Canvas
               blocks={canvasBlocks}
               connections={canvasConnections}
@@ -611,6 +384,7 @@ function App() {
               onSelect={setSelection}
               onMoveBlock={(id, x, y) => dragged.move(id, { x, y })}
               onConnect={connect}
+              onRenameBlock={(id, title) => patchBlock(id, { title })}
             >
               {hasDrags && (
                 <div className="absolute top-step-2xl right-step-2xl">
@@ -631,11 +405,11 @@ function App() {
             </Canvas>
           ) : (
             <section aria-label="Process canvas" className="flex flex-grow flex-col items-center justify-center gap-step-lg bg-surface text-body text-text-muted">
-              {loadError?.body?.issues ? (
+              {loadError?.issues ? (
                 <div className="max-w-xl">
                   <div className="mb-step-md text-hotspot-text">{loadError.message}</div>
                   <ul className="m-0 flex flex-col gap-step-xs pl-step-xl text-meta">
-                    {loadError.body.issues.map((i, n) => (
+                    {loadError.issues.map((i, n) => (
                       <li key={n}>
                         {i.path && <code className="font-mono">{i.path}: </code>}
                         {i.message}
@@ -658,19 +432,9 @@ function App() {
             </section>
           )}
 
-          {reviewOpen ? (
-            selectedChange && (
-              <ChangeDetail
-                status={selectedChange.status}
-                before={'before' in selectedChange ? selectedChange.before : undefined}
-                after={'after' in selectedChange ? selectedChange.after : undefined}
-                changes={'changes' in selectedChange ? selectedChange.changes : undefined}
-                onClose={() => setChangeSelection(null)}
-              />
-            )
-          ) : board && yamlOpen ? (
+          {board && yamlOpen ? (
             <YamlPanel
-              path={`stormm/processes/${board.id}.yaml`}
+              path={`${board.id}.yaml`}
               yaml={yaml}
               issues={issues}
               onCopy={copyYaml}

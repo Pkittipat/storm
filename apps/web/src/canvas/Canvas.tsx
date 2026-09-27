@@ -1,4 +1,3 @@
-import type { ChangeStatus } from '@stormm/process-model'
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { BlockCard, ZoomControl, type BlockKind } from '../components'
 import { BLOCK_HEIGHT, BLOCK_WIDTH, PORT_Y, connectorPath, snap, type Point } from './geometry'
@@ -20,8 +19,6 @@ export interface CanvasBlock {
   hotspots: number
   x: number
   y: number
-  /** In a diff view, marks this block as added/removed/changed instead of its normal kind-colored border. */
-  diffStatus?: ChangeStatus
 }
 
 export interface CanvasConnection {
@@ -29,8 +26,6 @@ export interface CanvasConnection {
   id: string
   from: string
   to: string
-  /** In a diff view, colors this connector instead of the normal neutral stroke. */
-  diffStatus?: 'added' | 'removed'
 }
 
 interface CanvasProps {
@@ -43,6 +38,8 @@ interface CanvasProps {
   onSelect?: (s: Selection) => void
   onMoveBlock?: (id: string, x: number, y: number) => void
   onConnect?: (sourceId: string, targetId: string) => void
+  /** Double-clicking a block edits its title in place. */
+  onRenameBlock?: (id: string, title: string) => void
   /** Floating overlays (composer, empty state) rendered above the world, unscaled. */
   children?: ReactNode
 }
@@ -73,12 +70,14 @@ export function Canvas({
   onSelect,
   onMoveBlock,
   onConnect,
+  onRenameBlock,
   children,
 }: CanvasProps) {
   const ref = useRef<HTMLElement>(null)
   const gesture = useRef<Gesture | null>(null)
   const [dragPos, setDragPos] = useState<{ id: string } & Point | null>(null)
   const [pending, setPending] = useState<{ sourceId: string; to: Point } | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // The live viewport. Panning and wheel-scrolling update it every frame but only re-render
   // the canvas; the parent hears about it once the view settles (reporting every frame would
@@ -233,6 +232,12 @@ export function Canvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      // Pointer capture retargets clicks to the canvas itself, so find the block under the pointer here.
+      onDoubleClick={(e) => {
+        if (!onRenameBlock || (e.target as HTMLElement).closest('textarea')) return
+        const target = blockAt(toWorld(e.clientX, e.clientY))
+        if (target) setEditingId(target.id)
+      }}
     >
       <div
         className="pointer-events-none absolute top-0 left-0 origin-top-left will-change-transform"
@@ -245,23 +250,10 @@ export function Canvas({
             if (!source || !target) return null
             const d = connectorPath(rightPort(source), leftPort(target))
             const selected = selection?.type === 'connection' && selection.id === c.id
-            const stroke = selected
-              ? 'var(--color-accent)'
-              : c.diffStatus === 'added'
-                ? 'var(--color-diff-add)'
-                : c.diffStatus === 'removed'
-                  ? 'var(--color-hotspot-text)'
-                  : 'var(--color-connector)'
+            const stroke = selected ? 'var(--color-accent)' : 'var(--color-connector)'
             return (
               <g key={c.id}>
-                <path
-                  d={d}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                  strokeDasharray={c.diffStatus === 'removed' ? '4 3' : undefined}
-                />
+                <path d={d} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinecap="round" />
                 {/* Wide invisible twin so the 1.5px line is clickable. */}
                 <path
                   d={d}
@@ -301,8 +293,10 @@ export function Canvas({
               title={b.title}
               actor={b.actor}
               hotspots={b.hotspots}
-              diffStatus={b.diffStatus}
               selected={selection?.type === 'block' && selection.id === b.id}
+              editing={editingId === b.id}
+              onTitleCommit={(title) => onRenameBlock?.(b.id, title)}
+              onEditEnd={() => setEditingId(null)}
               onConnectStart={
                 onConnect &&
                 ((e) => {
