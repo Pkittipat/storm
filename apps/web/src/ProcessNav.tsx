@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import type { ProcessSummary, Project } from './storage'
 import {
   EditableText,
@@ -36,6 +36,8 @@ interface ProcessNavProps {
   activeId: string | null
   /** Creates a process in that project (null = "No project"). */
   onNewProcess: (projectId: string | null) => void
+  /** Storm YAML files picked by the user; `folder` is the picked folder's name, or null for loose files. */
+  onImport: (files: File[], folder: string | null) => void
   onMoveProcess: (processId: string, projectId: string | null) => void
   /** Resolves with the created project so its name opens for editing. */
   onNewProject: () => Promise<Project | undefined>
@@ -56,6 +58,7 @@ export function ProcessNav({
   projects,
   activeId,
   onNewProcess,
+  onImport,
   onMoveProcess,
   onNewProject,
   onRenameProject,
@@ -165,6 +168,7 @@ export function ProcessNav({
         <PlusIcon size={16} />
         New
       </button>
+      <ImportMenu onImport={onImport} />
 
       <div className="mt-nav-section-gap flex h-control-xs shrink-0 items-center justify-between py-0 pr-step-2xs pl-step-md">
         {query === null ? (
@@ -367,6 +371,50 @@ function ProcessContextMenu({ process, x, y, projects, onMove, onNewProject, onC
   )
 }
 
+/** "Import" row: pick storm YAML files, or a whole folder of them. */
+function ImportMenu({ onImport }: { onImport: (files: File[], folder: string | null) => void }) {
+  const { ref, open, toggle, close } = useMenu()
+  const filesInput = useRef<HTMLInputElement>(null)
+  const folderInput = useRef<HTMLInputElement>(null)
+  // webkitdirectory isn't in React's types; every current browser supports it.
+  useEffect(() => folderInput.current?.setAttribute('webkitdirectory', ''), [])
+  const pick = (input: HTMLInputElement | null) => {
+    close()
+    input?.click()
+  }
+  const picked = (e: ChangeEvent<HTMLInputElement>, isFolder: boolean) => {
+    const files = [...(e.target.files ?? [])]
+    // Clear it so picking the same files again still fires a change.
+    e.target.value = ''
+    if (files.length) onImport(files, isFolder ? files[0].webkitRelativePath.split('/')[0] || null : null)
+  }
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={toggle}
+        className="flex h-control-lg w-full shrink-0 items-center gap-step-lg rounded-lg border-0 bg-transparent px-step-md text-left text-body font-medium text-text hover:bg-surface-hover"
+      >
+        <ImportIcon />
+        Import
+      </button>
+      {open && (
+        <Menu aria-label="Import" className="top-full left-0 mt-step-2xs">
+          <MenuLabel>Import storm YAML</MenuLabel>
+          <MenuItem autoFocus onClick={() => pick(filesInput.current)}>
+            Files…
+          </MenuItem>
+          <MenuItem onClick={() => pick(folderInput.current)}>Folder…</MenuItem>
+        </Menu>
+      )}
+      <input ref={filesInput} type="file" multiple accept=".yaml,.yml" hidden onChange={(e) => picked(e, false)} />
+      <input ref={folderInput} type="file" hidden onChange={(e) => picked(e, true)} />
+    </div>
+  )
+}
+
 function SortMenu({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void }) {
   const { ref, open, toggle, close } = useMenu()
   const pick = (s: Sort) => {
@@ -397,6 +445,14 @@ function PlusIcon({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" strokeWidth="1.8" {...icon}>
       <path d="M12 5v14M5 12h14" />
+    </svg>
+  )
+}
+
+function ImportIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" strokeWidth="1.8" {...icon}>
+      <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" />
     </svg>
   )
 }

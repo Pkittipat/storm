@@ -21,6 +21,12 @@ export interface ProcessFile {
   issues: Issue[]
 }
 
+export interface ImportResult {
+  /** `renamedFrom`: the file's id was already taken here, so the process got a fresh one. */
+  imported: { id: string; name: string; file: string; renamedFrom?: string }[]
+  skipped: { file: string; reason: string }[]
+}
+
 export class StorageError extends Error {
   readonly issues?: Issue[]
   constructor(message: string, issues?: Issue[]) {
@@ -113,6 +119,31 @@ export const storage = {
     writeJson(INDEX_KEY, readIndex().filter((e) => e.id !== id))
     localStorage.removeItem(processKey(id))
     localStorage.removeItem(layoutKey(id))
+  },
+
+  /**
+   * Adds storm YAML files as processes, filed under `projectId`. Each keeps its id, or gets a
+   * fresh one when that id is already taken here, so nothing already in this browser is overwritten.
+   * Files that can't be read as a process are skipped; validation errors don't block the import.
+   */
+  importProcesses(files: { name: string; text: string }[], projectId: string | null): ImportResult {
+    const index = readIndex()
+    const taken = new Set(index.map((e) => e.id))
+    const result: ImportResult = { imported: [], skipped: [] }
+    for (const file of files) {
+      const { board } = parseBoard(file.text)
+      if (!board) {
+        result.skipped.push({ file: file.name, reason: "it isn't a Stormm process YAML" })
+        continue
+      }
+      const id = taken.has(board.id) ? newId(board.id, taken, 'process') : board.id
+      taken.add(id)
+      localStorage.setItem(processKey(id), toYaml({ ...board, id }))
+      index.push({ id, projectId })
+      result.imported.push({ id, name: board.name, file: file.name, ...(id !== board.id && { renamedFrom: board.id }) })
+    }
+    writeJson(INDEX_KEY, index)
+    return result
   },
 
   listProjects(): Project[] {

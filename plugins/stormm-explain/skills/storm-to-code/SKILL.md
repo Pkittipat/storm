@@ -46,6 +46,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/stormm.mjs" changes <process.yaml> --since <
 
 Without Node, read the YAML directly with references/meaning.md, and compare versions with `git show <ref>:<path>`.
 
+## Where storms live
+
+In a repository, storms live in the `.stormm/` folder at its root, one process per file (e.g. `.stormm/publish-job.yaml`), committed with the code. If you can't find the storm the user means, ask.
+
 ## Working from a storm
 
 1. **Read the design.** Run `explain` and restate the design briefly:

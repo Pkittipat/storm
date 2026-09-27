@@ -22,10 +22,10 @@ claude --plugin-dir path/to/stormm/plugins/stormm
 
 ## Use
 
-Commit the storm YAML to your repository (download it from the Stormm app), then ask, for example:
-- "Implement stormm/publish-job.yaml"
-- "What changed in stormm/publish-job.yaml since v1.2? Update the code."
-- "Does the code still match stormm/publish-job.yaml?"
+Put your storms in a `.stormm/` folder at the root of your repository and commit them with the code (download each one from the Stormm app, or import a repo's `.stormm/` folder into the app). Then ask, for example:
+- "Implement .stormm/publish-job.yaml"
+- "What changed in .stormm/publish-job.yaml since v1.2? Update the code."
+- "Does the code still match .stormm/publish-job.yaml?"
 
 ## What's inside
 

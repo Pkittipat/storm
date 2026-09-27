@@ -305,6 +305,54 @@ function App() {
     }
   }
 
+  /**
+   * Imports storm YAML files. Loose files go to No project. A folder's files go into the project
+   * named like the folder (created if needed). Repositories keep their storms in `.stormm/`: when
+   * the folder has one, only the YAML inside it is imported; when the folder is `.stormm` itself,
+   * the project name is asked for. Other files are ignored.
+   */
+  const importFiles = async (files: File[], folder: string | null) => {
+    let yamls = files.filter((f) => /\.ya?ml$/i.test(f.name))
+    const inStormm = yamls.filter((f) => f.webkitRelativePath.split('/').slice(0, -1).includes('.stormm'))
+    if (folder && inStormm.length) yamls = inStormm
+    if (!yamls.length) {
+      window.alert(folder ? `No .yaml or .yml files in “${folder}”.` : 'Pick .yaml or .yml files.')
+      return
+    }
+    let projectName = folder
+    if (folder === '.stormm') {
+      const name = window.prompt('Import into which project? Leave empty for No project.', '')
+      if (name === null) return
+      projectName = name.trim() || null
+    }
+    try {
+      let projectId: string | null = null
+      if (projectName) {
+        const existing = storage.listProjects().find((p) => p.name.toLowerCase() === projectName.toLowerCase())
+        projectId = existing?.id ?? storage.createProject(projectName).id
+      }
+      const texts = await Promise.all(yamls.map(async (f) => ({ name: f.webkitRelativePath || f.name, text: await f.text() })))
+      const { imported, skipped } = storage.importProcesses(texts, projectId)
+      setProcesses(storage.listProcesses())
+      setProjects(storage.listProjects())
+
+      const skippedText = skipped.map((s) => `${s.file}: ${s.reason}`).join('\n')
+      if (!imported.length) {
+        window.alert(`Nothing imported.\n\n${skippedText}`)
+        return
+      }
+      const renamed = imported.filter((p) => p.renamedFrom)
+      const parts = [`Imported ${imported.length} process${imported.length > 1 ? 'es' : ''}`]
+      if (renamed.length) parts.push(`${renamed.length} got a new id (already taken)`)
+      if (skipped.length) parts.push(`skipped ${skipped.length}`)
+      window.location.hash = `#/p/${imported[0].id}`
+      setNotice({ text: parts.join(' · '), error: skipped.length > 0 })
+      if (skipped.length) window.alert(`Skipped:\n\n${skippedText}`)
+    } catch (e) {
+      fail(e)
+    }
+  }
+
   const downloadYaml = () => {
     if (!board) return
     const url = URL.createObjectURL(new Blob([yaml], { type: 'application/yaml' }))
@@ -343,6 +391,7 @@ function App() {
             projects={projects}
             activeId={processId}
             onNewProcess={createProcess}
+            onImport={importFiles}
             onMoveProcess={moveProcess}
             onNewProject={createProject}
             onRenameProject={renameProject}
