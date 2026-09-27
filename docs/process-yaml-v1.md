@@ -98,7 +98,7 @@ Processes live in the browser's `localStorage`; there is no server.
 
 - **Groups.** Blocks connected to each other, directly or through other blocks, form a group. Each group gets its own band of rows, stacked top to bottom in the order its first block appears in the file.
 - **Columns.** Within a group, a block's column is its longest path from the group's start blocks. Back edges (e.g. `policy → command` loops) are ignored for ranking.
-- **Rows.** Within a column, rows follow file order.
+- **Rows.** The first column follows file order. Each later column is ordered by the average row of each block's predecessors, so a block sits beside what leads into it and branches don't cross; ties (and blocks with no predecessor) follow file order.
 - **Unconnected blocks** share one last row, left to right in file order.
 
 ### Dragged positions (per browser)

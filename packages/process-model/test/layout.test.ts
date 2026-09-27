@@ -60,6 +60,34 @@ describe('layoutBoard', () => {
     expect(layoutBoard(board, opts).groups.map((g) => g.blockIds)).toEqual([['a', 'b', 'e'], ['c', 'd'], ['lonely', 'stray']])
   })
 
+  it("lines a block up with its predecessor so branches don't cross", () => {
+    // Job created → two policies; each policy's command sits beside it, whatever the file order.
+    const board: Board = {
+      schemaVersion: 1,
+      id: 'job',
+      name: 'Job',
+      blocks: [
+        block('job-created'),
+        block('log-activity', 'policy'),
+        block('notify-member-policy', 'policy'),
+        block('notify-member', 'command'),
+        block('create-activity-log', 'command'),
+      ],
+      connections: [
+        { from: 'job-created', to: 'log-activity' },
+        { from: 'job-created', to: 'notify-member-policy' },
+        { from: 'notify-member-policy', to: 'notify-member' },
+        { from: 'log-activity', to: 'create-activity-log' },
+      ],
+    }
+    expect(grid(board)).toMatchObject({
+      'log-activity': [1, 0],
+      'notify-member-policy': [1, 10],
+      'create-activity-log': [2, 0],
+      'notify-member': [2, 10],
+    })
+  })
+
   it('splits into two groups when the link between them is removed', () => {
     const b = removeBlock(checkout(), 'ship-when-placed')
     expect(grid(b)['ship-order']).toEqual([0, 15])

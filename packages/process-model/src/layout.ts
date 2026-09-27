@@ -35,7 +35,9 @@ export interface BoardLayout {
  * Derived positions — never stored. Blocks connected to each other form a group; groups
  * stack top to bottom in the order their first block appears in the file. Within a group a
  * block's column is its longest path from the group's start blocks (back edges of loops are
- * ignored for ranking) and rows follow file order. Unconnected blocks share one last row.
+ * ignored for ranking). The first column's rows follow file order; each later column is ordered
+ * by where its blocks' predecessors sit, so branches don't cross, with file order breaking ties.
+ * Unconnected blocks share one last row.
  */
 export function layoutBoard(board: Board, options: Partial<LayoutOptions> = {}): BoardLayout {
   const o = { ...DEFAULT_LAYOUT, ...options }
@@ -74,17 +76,33 @@ export function layoutBoard(board: Board, options: Partial<LayoutOptions> = {}):
   let top = o.originY
   for (const members of groups) {
     const inGroup = new Set(members)
-    const columnOf = rank(members, edges.filter((e) => inGroup.has(e.from)))
+    const groupEdges = edges.filter((e) => inGroup.has(e.from))
+    const columnOf = rank(members, groupEdges)
     const columns = new Map<number, string[]>()
     for (const id of members) {
       const col = columnOf.get(id)!
       if (!columns.has(col)) columns.set(col, [])
       columns.get(col)!.push(id)
     }
+    // Predecessors in earlier columns (loop-closing edges point backwards and are left out).
+    const parents = new Map<string, string[]>(members.map((id) => [id, []]))
+    for (const e of groupEdges) if (columnOf.get(e.from)! < columnOf.get(e.to)!) parents.get(e.to)!.push(e.from)
+
+    const rowOf = new Map<string, number>()
     let rows = 1
-    for (const [col, colIds] of columns) {
-      rows = Math.max(rows, colIds.length)
-      colIds.forEach((id, row) => positions.set(id, { x: o.originX + col * o.columnWidth, y: top + row * o.rowHeight }))
+    for (const col of [...columns.keys()].sort((a, b) => a - b)) {
+      const colIds = columns.get(col)!
+      // Mean row of the block's predecessors; blocks without one keep their file-order place.
+      const key = new Map(colIds.map((id, i) => {
+        const from = parents.get(id)!.map((p) => rowOf.get(p)!)
+        return [id, from.length ? from.reduce((a, b) => a + b, 0) / from.length : i]
+      }))
+      const sorted = [...colIds].sort((a, b) => key.get(a)! - key.get(b)! || order.get(a)! - order.get(b)!)
+      rows = Math.max(rows, sorted.length)
+      sorted.forEach((id, row) => {
+        rowOf.set(id, row)
+        positions.set(id, { x: o.originX + col * o.columnWidth, y: top + row * o.rowHeight })
+      })
     }
     const height = rows * o.rowHeight
     out.push({ blockIds: members, y: top, height, columns: Math.max(...columns.keys()) + 1 })
