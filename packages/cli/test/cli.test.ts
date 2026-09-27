@@ -55,7 +55,9 @@ describe('changes', () => {
     event.title = 'Job Created'
     event.fields = event.fields.filter((f) => f.name !== 'publishedAt')
     before.connections = before.connections.filter((c) => c.to !== 'notify-organization-members')
+    after.blocks.find((b) => b.id === 'job')!.invariants.push('A job can only be published once')
     const out = renderChanges(changes(before, after), before, after, 'v1')
+    expect(out).toContain('- `job` (aggregate) Job\n  - invariant added: "A job can only be published once"')
     expect(out).toContain('- `job-published` (event) Job Published\n  - title: Job Created → Job Published\n  - field added: publishedAt: time')
     expect(out).toContain('## Connections added\n\n- `job-published` → `notify-organization-members` (Job Published → Notify organization members)')
     // Nothing the YAML doesn't say: no code names, no arrow wording.

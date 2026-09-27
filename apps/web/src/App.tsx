@@ -140,6 +140,7 @@ function App() {
       title: b.title,
       actor: b.actor,
       hotspots: b.hotspots.length,
+      invariants: b.invariants.length,
       ...(dragged.positions[b.id] ?? layout.positions.get(b.id) ?? { x: 0, y: 0 }),
     }))
   }, [board, layout, dragged.positions])

@@ -16,6 +16,7 @@ const quote = (s: string) => JSON.stringify(s)
 function blockLine(b: Block) {
   const parts = [`title: ${b.title}`]
   if (b.actor) parts.push(`actor: ${b.actor}`)
+  if (b.invariants.length) parts.push(`invariants: ${b.invariants.map(quote).join(', ')}`)
   if (b.fields.length) parts.push(`fields: ${b.fields.map(field).join(', ')}`)
   if (b.hotspots.length) parts.push(`hotspots: ${b.hotspots.map(quote).join(', ')}`)
   return `- \`${b.id}\` (${b.kind}) ${parts.join('; ')}`
@@ -55,6 +56,10 @@ export function renderChanges(d: BoardDiff, before: Board | null, after: Board, 
       if (what.includes('title')) lines.push(`title: ${a.title} → ${b.title}`)
       if (what.includes('kind')) lines.push(`kind: ${a.kind} → ${b.kind}`)
       if (what.includes('actor')) lines.push(`actor: ${a.actor ?? '(none)'} → ${b.actor ?? '(none)'}`)
+      if (what.includes('invariants')) {
+        for (const r of b.invariants.filter((r) => !a.invariants.includes(r))) lines.push(`invariant added: ${quote(r)}`)
+        for (const r of a.invariants.filter((r) => !b.invariants.includes(r))) lines.push(`invariant removed: ${quote(r)}`)
+      }
       if (what.includes('fields')) lines.push(...fieldChanges(a.fields, b.fields))
       if (what.includes('hotspots')) {
         for (const h of b.hotspots.filter((h) => !a.hotspots.includes(h))) lines.push(`hotspot added: ${quote(h)}`)

@@ -20,6 +20,12 @@ describe('diffBoards', () => {
     expect(summarize(d, before, after)).toEqual(['Added policy “Reserve stock”', 'Connected “Order placed” → “Reserve stock”'])
   })
 
+  it('reports changed invariants', () => {
+    const before = checkout()
+    const after = updateBlock(before, 'order', { invariants: ['An order needs at least one item', 'An order is placed only once'] })
+    expect(diffBoards(before, after).blocks.changed).toEqual([expect.objectContaining({ changes: ['invariants'] })])
+  })
+
   it('treats a rename as a change, not a remove and add', () => {
     const before = checkout()
     const after = updateBlock(before, 'place-order', { title: 'Submit order', actor: null })

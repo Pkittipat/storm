@@ -18,6 +18,7 @@ export interface CanvasBlock {
   title: string
   actor?: string
   hotspots: number
+  invariants: number
   x: number
   y: number
 }
@@ -356,6 +357,7 @@ export function Canvas({
               title={b.title}
               actor={b.actor}
               hotspots={b.hotspots}
+              invariants={b.invariants}
               selected={selection?.type === 'block' && selection.id === b.id}
               editing={editingId === b.id}
               onTitleCommit={(title) => onRenameBlock?.(b.id, title)}

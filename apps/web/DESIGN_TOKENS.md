@@ -80,7 +80,8 @@ A **selected** block ignores `-line` and uses a 1.5px `border-accent` + `ring-4 
 | Class | Value | Use for |
 |---|---|---|
 | `bg-actor` / `text-actor-text` | `#F7D54A` / `#3D3000` | Actor chip (e.g. "Customer") |
-| `bg-hotspot-surface` / `text-hotspot-text` | `#FBE3E0` / `#A8291F` | Hotspot-count chip on a block; `text-hotspot-text` also for error notices and destructive Menu items |
+| `bg-hotspot` / `text-hotspot-on` | `#C9463D` / `#FFFFFF` | Hotspot-count chip on a block (solid) |
+| `bg-hotspot-surface` / `text-hotspot-text` | `#FBE3E0` / `#A8291F` | `text-hotspot-text` for error notices and destructive Menu items; `bg-hotspot-surface` is its pale tint |
 | `bg-hotspot-dot` | `#C2362B` | Warning dot in the Hotspots list (not interchangeable with hotspot-text) |
 
 ## Typography

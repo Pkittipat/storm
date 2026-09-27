@@ -27,6 +27,7 @@ export interface Unit {
   names: Names
   actor?: string
   fields: Field[]
+  invariants: string[]
   hotspots: string[]
   /** Ids of the units on the other end of each relationship, by role. */
   links: Partial<Record<LinkRole, string[]>>
@@ -113,6 +114,7 @@ export function buildContract(board: Board): Contract {
         names: names(b.title),
         ...(b.actor && { actor: b.actor }),
         fields: b.fields,
+        invariants: b.invariants,
         hotspots: b.hotspots,
         links: {},
       },
@@ -140,6 +142,7 @@ export function buildContract(board: Board): Contract {
     if (u.kind === 'command' && (l.handledBy?.length ?? 0) > 1) gaps.push(`Command "${u.title}" is handled by more than one aggregate (${titles(l.handledBy)}).`)
     if (u.kind === 'aggregate' && !l.handles) gaps.push(`Aggregate "${u.title}" handles no command.`)
     if (u.kind === 'aggregate' && !l.records) gaps.push(`Aggregate "${u.title}" records no event.`)
+    if (u.kind === 'aggregate' && l.handles && !u.invariants.length) gaps.push(`Aggregate "${u.title}" states no invariants: the storm doesn't say when it refuses a command.`)
     if (u.kind === 'aggregate' && (l.handles?.length ?? 0) > 1 && (l.records?.length ?? 0) > 1)
       gaps.push(`Aggregate "${u.title}" handles ${titles(l.handles)} and records ${titles(l.records)}; the storm doesn't say which command records which event.`)
     if (u.kind === 'event' && !l.recordedBy) gaps.push(`Event "${u.title}" is not recorded by any aggregate.`)

@@ -115,7 +115,7 @@ class Reader {
 
   block(v: unknown, path: string): Block {
     const o = this.record(v, path, 'block')
-    this.unknownKeys(o, ['id', 'kind', 'title', 'actor', 'hotspots', 'fields'], path)
+    this.unknownKeys(o, ['id', 'kind', 'title', 'actor', 'invariants', 'hotspots', 'fields'], path)
     const actor = this.optionalString(o, 'actor', path)
     return {
       id: this.string(o, 'id', path),
@@ -123,6 +123,11 @@ class Reader {
       kind: this.string(o, 'kind', path) as BlockKind,
       title: this.string(o, 'title', path),
       ...(actor !== undefined && { actor }),
+      invariants: this.list(o, 'invariants', path, false, (x, p) => {
+        if (typeof x === 'string') return x
+        this.error(p, 'type', 'Each invariant must be text.')
+        return ''
+      }),
       hotspots: this.list(o, 'hotspots', path, false, (x, p) => {
         if (typeof x === 'string') return x
         this.error(p, 'type', 'Each hotspot must be text.')

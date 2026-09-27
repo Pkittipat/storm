@@ -43,6 +43,11 @@ export function validate(board: Board): Issue[] {
     else blocks.set(b.id, { kind: b.kind, title: b.title })
     if (!BLOCK_KINDS.includes(b.kind)) error('unknown-kind', `Block “${b.id}” has unknown kind “${b.kind}”; use one of ${BLOCK_KINDS.join(', ')}.`, `${bp}.kind`)
     if (!b.title.trim()) error('required', `Block “${b.id}” needs a title.`, `${bp}.title`)
+    b.invariants.forEach((r, ri) => {
+      if (!r.trim()) error('required', `An invariant on “${b.id}” is empty.`, `${bp}.invariants[${ri}]`)
+    })
+    if (b.invariants.length && b.kind !== 'aggregate')
+      warn('invariant-kind', `“${b.title}” is a ${KIND_LABEL[b.kind] ?? b.kind} with invariants; invariants belong to aggregates.`, `${bp}.invariants`)
     b.fields.forEach((f, fi) => {
       if (!f.name.trim()) error('required', `A field on “${b.id}” needs a name.`, `${bp}.fields[${fi}].name`)
     })

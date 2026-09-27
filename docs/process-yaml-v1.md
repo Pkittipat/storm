@@ -26,7 +26,11 @@ blocks:
     fields:
       - { name: cartId, type: string }
       - { name: shippingAddress, type: Address }
-  - { id: order, kind: aggregate, title: Order }
+  - id: order
+    kind: aggregate
+    title: Order
+    invariants:
+      - An order needs at least one item
   - { id: order-placed, kind: event, title: Order placed }
   - { id: ship-when-placed, kind: policy, title: Ship when order placed }
   - { id: ship-order, kind: command, title: Ship order, actor: Warehouse }
@@ -63,10 +67,13 @@ connections:
 | `kind` | yes | `readmodel` \| `command` \| `aggregate` \| `event` \| `policy` |
 | `title` | yes | Business name on the card. |
 | `actor` | no | Who performs it, e.g. `Customer`. |
+| `invariants` | no | Aggregates only: rules the aggregate always protects, list of strings in plain words, e.g. `A job can only be published once`. |
 | `hotspots` | no | Open questions, list of strings. |
 | `fields` | no | List of `{ name, type }`; `type` is free text. |
 
 Optional keys are omitted when empty.
+
+An invariant is a decided rule; a hotspot is an open question. When a hotspot is answered with a rule, it moves to `invariants`.
 
 **Connection**: `{ from: <block id>, to: <block id> }`. No other keys in v1.
 
@@ -119,6 +126,8 @@ Dragging is a personal view preference. It is kept in `localStorage` separately 
 | `schemaVersion` is known | error |
 | IDs are valid slugs and block IDs are unique | error |
 | `kind` is one of the five kinds | error |
+| An invariant is empty | error |
+| Invariants on a block that isn't an aggregate | warning |
 | Connection ends exist | error |
 | Duplicate connection, or a block connected to itself | error |
 | Grammar: `readmodel → command → aggregate → event → policy → command`, plus `event → readmodel` | warning |

@@ -7,7 +7,7 @@ description: Process modeling coding. A finished Stormm event storm is already t
 
 **Process modeling coding:** once the event storm is done, the domain is already designed. The storm isn't a loose description to interpret; it *is* the design.
 
-- **The domain model:** the aggregates, the boundaries where rules keep things consistent.
+- **The domain model:** the aggregates, the boundaries where rules keep things consistent, and their invariants, the rules themselves.
 - **The domain interface:** the commands (what can be asked of the model, with their fields as input) and the events (what the model announces, with their fields as output).
 - **The usage:** who uses the interface (the command's actor), from what information (read models), and what uses it automatically in reaction to other facts (policies).
 
@@ -53,7 +53,7 @@ In a repository, storms live in the `.stormm/` folder at its root, one process p
 ## Working from a storm
 
 1. **Read the design.** Run `explain` and restate the design briefly:
-   - the model (aggregates)
+   - the model (aggregates and their invariants)
    - its interface (commands in, events out, with their fields)
    - its usage (actors, read models and what they expose, policies)
 

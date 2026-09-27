@@ -14,6 +14,8 @@ export interface Block {
   kind: BlockKind
   title: string
   actor?: string
+  /** Rules an aggregate always protects, in plain words. Only meaningful on aggregates. */
+  invariants: string[]
   hotspots: string[]
   fields: Field[]
 }

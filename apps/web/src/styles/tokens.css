@@ -228,9 +228,15 @@
   --color-actor: #f7d54a;
   --color-actor-text: #3d3000;
 
-  /* Usage: the hotspot-count chip on a block header (e.g. "1 hotspot").
-     hotspot-text doubles as the error/destructive text color: error
-     notices and destructive Menu items ("Delete project"). */
+  /* Usage: the hotspot-count chip on a block header (e.g. "1 hotspot"):
+     solid red with white text, so an open question stands out on the
+     canvas. */
+  --color-hotspot: #c9463d;
+  --color-hotspot-on: #ffffff;
+
+  /* Usage: hotspot-text is the error/destructive text color: error
+     notices and destructive Menu items ("Delete project");
+     hotspot-surface is its pale tint. */
   --color-hotspot-surface: #fbe3e0;
   --color-hotspot-text: #a8291f;
 

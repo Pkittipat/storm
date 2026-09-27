@@ -11,7 +11,7 @@ function grid(board: Board) {
   return out
 }
 
-const block = (id: string, kind: Board['blocks'][number]['kind'] = 'event') => ({ id, kind, title: id, hotspots: [], fields: [] })
+const block = (id: string, kind: Board['blocks'][number]['kind'] = 'event') => ({ id, kind, title: id, invariants: [], hotspots: [], fields: [] })
 
 describe('layoutBoard', () => {
   it('ranks a connected process left to right', () => {

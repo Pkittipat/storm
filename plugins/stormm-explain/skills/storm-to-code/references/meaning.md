@@ -1,6 +1,6 @@
 # Reading a storm as design
 
-A finished storm is the domain design: the aggregates are the **domain model**, the commands and events (with their fields) are its **interface**, and actors, read models and policies are its **usage**. Only how it's built is left to the project.
+A finished storm is the domain design: the aggregates (with their invariants) are the **domain model**, the commands and events (with their fields) are its **interface**, and actors, read models and policies are its **usage**. Only how it's built is left to the project.
 
 ## The YAML (schema v1)
 
@@ -13,6 +13,7 @@ blocks:
     kind: command          # readmodel | command | aggregate | event | policy
     title: Publish Job     # the business name
     actor: Recruiter       # optional: who does it
+    invariants: [ "…" ]    # optional, aggregates only: rules it always protects, in plain words
     hotspots: [ "…" ]      # optional: open questions
     fields:                # optional: { name, type }, type is free text (string, time, Address, Item[]…)
       - { name: jobId, type: string }
@@ -31,6 +32,7 @@ Match blocks by `id`, never by title. Two versions of a storm describe the same 
 | **event** | interface: a fact announced (output) | This fact happened and matters to the business. Past tense; it can't be undone. | Record or announce the fact with the data in its fields, so others can react. |
 | **policy** | usage: automatic | Whenever this happens, the business does that. A standing rule of reaction. | React to the event by issuing the command, without someone having to ask. |
 | **read model** | usage: the read path, what a user sees to decide | Someone needs to see this to make a decision. | Expose exactly its fields, read-only. See [Read models](#read-models). |
+| **invariant** (on an aggregate) | model: a rule | This is always true for this aggregate, e.g. "A job can only be published once". | Refuse any command that would break it, the project's way, with a test for each rule. |
 | **hotspot** | an undecided part of the design | Nobody knows the answer yet. | Don't answer it silently. |
 | **fields** | the interface's data | The data that belongs to the sticky, in business terms. | Carry that data. Types are free text: map them to the project's types. |
 
@@ -63,7 +65,10 @@ An arrow outside this grammar (`check` warns about it) means something the storm
 
 Treat these as questions for the user, not decisions for you:
 
-- **The rules themselves:** when an aggregate refuses a command. A storm often names where rules live without stating them.
+- **Rules beyond the invariants:** an aggregate's `invariants` are its rules, and only those. Implement each one and don't add others. If an aggregate lists none, the storm doesn't say when it refuses a command: ask.
+- **Which command an invariant applies to:** read it from the sentence ("…can only be *published* once" guards Publish Job). If it isn't clear, ask.
+- **Rules that need data from outside the aggregate** (e.g. "a recruiter has at most 10 open jobs" on Job): that's a question about the aggregate's boundary. Raise it; don't quietly read other data to enforce it.
+- **What state enforces a rule:** the aggregate keeps only what its invariants and events need.
 - **Which command leads to which event** when one aggregate handles several commands and records several events.
 - **Where a read model's information comes from** when no event updates it.
 - **What decides a command** that leads to no aggregate (often another system, or a gap in the storm).

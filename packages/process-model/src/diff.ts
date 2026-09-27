@@ -1,6 +1,6 @@
 import { connectionKey, type Block, type Board, type Connection } from './model.js'
 
-export type BlockChange = 'title' | 'kind' | 'actor' | 'hotspots' | 'fields'
+export type BlockChange = 'title' | 'kind' | 'actor' | 'invariants' | 'hotspots' | 'fields'
 
 export interface BoardDiff {
   name?: { from: string; to: string }
@@ -33,6 +33,7 @@ export function diffBoards(before: Board, after: Board): BoardDiff {
         if (a.title !== b.title) changes.push('title')
         if (a.kind !== b.kind) changes.push('kind')
         if ((a.actor ?? '') !== (b.actor ?? '')) changes.push('actor')
+        if (!sameJson(a.invariants, b.invariants)) changes.push('invariants')
         if (!sameJson(a.hotspots, b.hotspots)) changes.push('hotspots')
         if (!sameJson(a.fields, b.fields)) changes.push('fields')
         return changes.length ? [{ before: a, after: b, changes }] : []

@@ -11,10 +11,10 @@ interface InspectorProps {
   onClose: () => void
 }
 
-/** The docked block inspector: edit a block's title, actor, hotspots and fields, and see what it connects to. */
+/** The docked block inspector: edit a block's title, actor, invariants (aggregates), hotspots and fields, and see what it connects to. */
 export function Inspector({ block, board, onChange, onDelete, onSelectBlock, onClose }: InspectorProps) {
   // The row just added via "+", focused with its placeholder selected.
-  const [fresh, setFresh] = useState<'hotspot' | 'field' | null>(null)
+  const [fresh, setFresh] = useState<'invariant' | 'hotspot' | 'field' | null>(null)
   const byId = new Map(board.blocks.map((b) => [b.id, b]))
   const links = board.connections.flatMap((c) => {
     const id = `${c.from}->${c.to}`
@@ -25,6 +25,7 @@ export function Inspector({ block, board, onChange, onDelete, onSelectBlock, onC
 
   const setFields = (fields: Field[]) => onChange({ fields })
   const setHotspots = (hotspots: string[]) => onChange({ hotspots })
+  const setInvariants = (invariants: string[]) => onChange({ invariants })
 
   return (
     <Panel
@@ -52,6 +53,34 @@ export function Inspector({ block, board, onChange, onDelete, onSelectBlock, onC
                 className="h-control-md px-step-md text-body text-text"
               />
             </PanelSection>
+
+            {(block.kind === 'aggregate' || block.invariants.length > 0) && (
+              <PanelSection label="Invariants" action={<AddButton label="Add invariant" onClick={() => {
+                  setFresh('invariant')
+                  setInvariants([...block.invariants, ''])
+                }} />}>
+                {block.invariants.length === 0 && <Empty>No rules yet, e.g. “A job can only be published once”</Empty>}
+                {block.invariants.map((r, i) => (
+                  <Row key={i} onRemove={() => setInvariants(block.invariants.filter((_, j) => j !== i))} removeLabel="Remove invariant">
+                    <span aria-hidden="true" className="h-indicator-sm w-indicator-sm shrink-0 rounded-sm bg-aggregate" />
+                    <EditableText
+                      aria-label={`Invariant ${i + 1}`}
+                      value={r}
+                      placeholder="Rule this aggregate always protects"
+                      multiline
+                      autoFocus={fresh === 'invariant' && i === block.invariants.length - 1}
+                      onBlur={(e) => {
+                        setFresh(null)
+                        // An invariant left empty (a new row never typed in, or one cleared) is removed, not saved.
+                        if (!e.currentTarget.value.trim()) setInvariants(block.invariants.filter((_, j) => j !== i))
+                      }}
+                      onCommit={(v) => v && setInvariants(block.invariants.map((x, j) => (j === i ? v : x)))}
+                      className="min-h-control-sm flex-grow px-1 py-0.5 text-body text-text"
+                    />
+                  </Row>
+                ))}
+              </PanelSection>
+            )}
 
             <PanelSection label="Hotspots" action={<AddButton label="Add hotspot" onClick={() => {
                 setFresh('hotspot')
@@ -133,7 +162,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
 
 function Row({ children, onRemove, removeLabel }: { children: React.ReactNode; onRemove: () => void; removeLabel: string }) {
   return (
-    <div className="group flex h-control-md items-center gap-step-sm rounded-lg pl-step-md">
+    <div className="group flex min-h-control-md items-center gap-step-sm rounded-lg pl-step-md">
       {children}
       <IconButton size="sm" aria-label={removeLabel} onClick={onRemove} className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" icon={<span aria-hidden="true">&times;</span>} />
     </div>

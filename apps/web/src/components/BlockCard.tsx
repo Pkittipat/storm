@@ -10,6 +10,8 @@ interface BlockCardProps {
   /** Who performs this step (e.g. "Customer") — an attribute of the block, never a block of its own. */
   actor?: string | null
   hotspots?: number
+  /** How many rules (invariants) an aggregate protects. */
+  invariants?: number
   /** Shows the title as a text box (double-click on the canvas); Enter or blur commits, Escape cancels. */
   editing?: boolean
   onTitleCommit?: (title: string) => void
@@ -31,7 +33,7 @@ interface BlockCardProps {
  * absolutely on a canvas surface (the parent must be `position:
  * relative`).
  */
-export function BlockCard({ kind, title, selected = false, actor, hotspots, editing, onTitleCommit, onEditEnd, onConnectStart, position }: BlockCardProps) {
+export function BlockCard({ kind, title, selected = false, actor, hotspots, invariants, editing, onTitleCommit, onEditEnd, onConnectStart, position }: BlockCardProps) {
   const { surface, line } = blockKindClasses[kind]
   const portClass = selected ? 'border-accent' : 'border-port'
   const border = selected ? 'border-[1.5px] border-accent' : line
@@ -49,10 +51,19 @@ export function BlockCard({ kind, title, selected = false, actor, hotspots, edit
         ) : (
           <FitTitle title={title} />
         )}
-        {actor || hotspots ? (
+        {actor || hotspots || invariants ? (
           <div className="mt-auto flex gap-step-2xs">
             {actor && <Chip variant="actor">{actor}</Chip>}
-            {hotspots ? <Chip variant="hotspot" aria-label={`${hotspots} hotspot`}>{hotspots}</Chip> : null}
+            {invariants ? (
+              <Chip variant="invariant" icon={<ShieldIcon />} aria-label={`${invariants} invariant${invariants > 1 ? 's' : ''}`}>
+                {invariants}
+              </Chip>
+            ) : null}
+            {hotspots ? (
+              <Chip variant="hotspot" icon={<QuestionIcon />} aria-label={`${hotspots} hotspot`}>
+                {hotspots}
+              </Chip>
+            ) : null}
           </div>
         ) : null}
         <Port className={portClass} side="left" />
@@ -144,5 +155,24 @@ function Port({
         side === 'left' ? '-left-indicator-offset' : '-right-indicator-offset'
       } ${className}`}
     />
+  )
+}
+
+/** Marks the invariant count: rules the aggregate protects. */
+function ShieldIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
+    </svg>
+  )
+}
+
+/** Marks the hotspot count: open questions. */
+function QuestionIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9.5" />
+      <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17.3h.01" />
+    </svg>
   )
 }

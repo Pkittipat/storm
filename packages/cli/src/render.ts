@@ -6,7 +6,7 @@ const PLURAL = { command: 'Commands', aggregate: 'Aggregates', event: 'Events', 
 const fieldList = (u: Unit) => (u.fields.length ? u.fields.map((f) => `${f.name}: ${f.type}`).join(', ') : '—')
 
 export function unitLine(u: Unit) {
-  const extra = [u.actor && `actor ${u.actor}`, `fields ${fieldList(u)}`, u.hotspots.length && `hotspots: ${u.hotspots.join(' / ')}`].filter(Boolean)
+  const extra = [u.actor && `actor ${u.actor}`, u.invariants.length && `invariants: ${u.invariants.join(' / ')}`, `fields ${fieldList(u)}`, u.hotspots.length && `hotspots: ${u.hotspots.join(' / ')}`].filter(Boolean)
   return `${u.title} — \`${u.names.pascal}\` (id \`${u.id}\`; ${extra.join('; ')})`
 }
 

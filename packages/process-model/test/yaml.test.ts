@@ -12,6 +12,25 @@ describe('toYaml', () => {
     expect(parseBoard(toYaml(board)).board).toEqual(board)
   })
 
+  it('writes invariants after the actor and before hotspots and fields', () => {
+    const board: Board = {
+      schemaVersion: 1,
+      id: 'p',
+      name: 'P',
+      blocks: [{ id: 'job', kind: 'aggregate', title: 'Job', invariants: ['A job can only be published once'], hotspots: ['Can a closed job reopen?'], fields: [{ name: 'status', type: 'string' }] }],
+      connections: [],
+    }
+    expect(toYaml(board)).toContain(
+      '  - id: job\n    kind: aggregate\n    title: Job\n    invariants:\n      - A job can only be published once\n    hotspots:\n      - Can a closed job reopen?\n    fields:\n',
+    )
+    expect(parseBoard(toYaml(board)).board).toEqual(board)
+  })
+
+  it('rejects an invariant that is not text', () => {
+    const { issues } = parseBoard('schemaVersion: 1\nid: p\nname: P\nblocks:\n  - { id: job, kind: aggregate, title: Job, invariants: [{ rule: x }] }\n')
+    expect(issues).toContainEqual(expect.objectContaining({ level: 'error', message: 'Each invariant must be text.' }))
+  })
+
   it('omits empty connections and writes empty blocks explicitly', () => {
     const board: Board = { schemaVersion: 1, id: 'empty', name: 'Empty', blocks: [], connections: [] }
     expect(toYaml(board)).toBe('schemaVersion: 1\nid: empty\nname: Empty\n\nblocks: []\n')
@@ -62,8 +81,8 @@ connections: [{from: cart, to: place-order}]
     const { board, issues } = parseBoard(text)
     expect(issues).toEqual([])
     expect(board?.blocks).toEqual([
-      { id: 'cart', kind: 'readmodel', title: 'Cart', hotspots: [], fields: [] },
-      { id: 'place-order', kind: 'command', title: 'Place order', hotspots: [], fields: [] },
+      { id: 'cart', kind: 'readmodel', title: 'Cart', invariants: [], hotspots: [], fields: [] },
+      { id: 'place-order', kind: 'command', title: 'Place order', invariants: [], hotspots: [], fields: [] },
     ])
     expect(toYaml(board!)).toContain('  - { id: cart, kind: readmodel, title: Cart }')
   })

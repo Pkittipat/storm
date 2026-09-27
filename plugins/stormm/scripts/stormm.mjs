@@ -7469,7 +7469,7 @@ var Reader = class {
   }
   block(v, path2) {
     const o = this.record(v, path2, "block");
-    this.unknownKeys(o, ["id", "kind", "title", "actor", "hotspots", "fields"], path2);
+    this.unknownKeys(o, ["id", "kind", "title", "actor", "invariants", "hotspots", "fields"], path2);
     const actor = this.optionalString(o, "actor", path2);
     return {
       id: this.string(o, "id", path2),
@@ -7477,6 +7477,11 @@ var Reader = class {
       kind: this.string(o, "kind", path2),
       title: this.string(o, "title", path2),
       ...actor !== void 0 && { actor },
+      invariants: this.list(o, "invariants", path2, false, (x, p) => {
+        if (typeof x === "string") return x;
+        this.error(p, "type", "Each invariant must be text.");
+        return "";
+      }),
       hotspots: this.list(o, "hotspots", path2, false, (x, p) => {
         if (typeof x === "string") return x;
         this.error(p, "type", "Each hotspot must be text.");
@@ -7529,6 +7534,11 @@ function validate(board2) {
     else blocks.set(b.id, { kind: b.kind, title: b.title });
     if (!BLOCK_KINDS.includes(b.kind)) error("unknown-kind", `Block \u201C${b.id}\u201D has unknown kind \u201C${b.kind}\u201D; use one of ${BLOCK_KINDS.join(", ")}.`, `${bp}.kind`);
     if (!b.title.trim()) error("required", `Block \u201C${b.id}\u201D needs a title.`, `${bp}.title`);
+    b.invariants.forEach((r, ri) => {
+      if (!r.trim()) error("required", `An invariant on \u201C${b.id}\u201D is empty.`, `${bp}.invariants[${ri}]`);
+    });
+    if (b.invariants.length && b.kind !== "aggregate")
+      warn("invariant-kind", `\u201C${b.title}\u201D is a ${KIND_LABEL[b.kind] ?? b.kind} with invariants; invariants belong to aggregates.`, `${bp}.invariants`);
     b.fields.forEach((f, fi) => {
       if (!f.name.trim()) error("required", `A field on \u201C${b.id}\u201D needs a name.`, `${bp}.fields[${fi}].name`);
     });
@@ -7578,6 +7588,7 @@ function diffBoards(before, after) {
         if (a.title !== b.title) changes2.push("title");
         if (a.kind !== b.kind) changes2.push("kind");
         if ((a.actor ?? "") !== (b.actor ?? "")) changes2.push("actor");
+        if (!sameJson(a.invariants, b.invariants)) changes2.push("invariants");
         if (!sameJson(a.hotspots, b.hotspots)) changes2.push("hotspots");
         if (!sameJson(a.fields, b.fields)) changes2.push("fields");
         return changes2.length ? [{ before: a, after: b, changes: changes2 }] : [];
@@ -7600,6 +7611,7 @@ var quote = (s) => JSON.stringify(s);
 function blockLine(b) {
   const parts = [`title: ${b.title}`];
   if (b.actor) parts.push(`actor: ${b.actor}`);
+  if (b.invariants.length) parts.push(`invariants: ${b.invariants.map(quote).join(", ")}`);
   if (b.fields.length) parts.push(`fields: ${b.fields.map(field).join(", ")}`);
   if (b.hotspots.length) parts.push(`hotspots: ${b.hotspots.map(quote).join(", ")}`);
   return `- \`${b.id}\` (${b.kind}) ${parts.join("; ")}`;
@@ -7635,6 +7647,10 @@ function renderChanges(d, before, after, since2) {
       if (what.includes("title")) lines.push(`title: ${a.title} \u2192 ${b.title}`);
       if (what.includes("kind")) lines.push(`kind: ${a.kind} \u2192 ${b.kind}`);
       if (what.includes("actor")) lines.push(`actor: ${a.actor ?? "(none)"} \u2192 ${b.actor ?? "(none)"}`);
+      if (what.includes("invariants")) {
+        for (const r of b.invariants.filter((r2) => !a.invariants.includes(r2))) lines.push(`invariant added: ${quote(r)}`);
+        for (const r of a.invariants.filter((r2) => !b.invariants.includes(r2))) lines.push(`invariant removed: ${quote(r)}`);
+      }
       if (what.includes("fields")) lines.push(...fieldChanges(a.fields, b.fields));
       if (what.includes("hotspots")) {
         for (const h of b.hotspots.filter((h2) => !a.hotspots.includes(h2))) lines.push(`hotspot added: ${quote(h)}`);
@@ -7711,6 +7727,7 @@ function buildContract(board2) {
         names: names(b.title),
         ...b.actor && { actor: b.actor },
         fields: b.fields,
+        invariants: b.invariants,
         hotspots: b.hotspots,
         links: {}
       }
@@ -7736,6 +7753,7 @@ function buildContract(board2) {
     if (u.kind === "command" && (l.handledBy?.length ?? 0) > 1) gaps.push(`Command "${u.title}" is handled by more than one aggregate (${titles(l.handledBy)}).`);
     if (u.kind === "aggregate" && !l.handles) gaps.push(`Aggregate "${u.title}" handles no command.`);
     if (u.kind === "aggregate" && !l.records) gaps.push(`Aggregate "${u.title}" records no event.`);
+    if (u.kind === "aggregate" && l.handles && !u.invariants.length) gaps.push(`Aggregate "${u.title}" states no invariants: the storm doesn't say when it refuses a command.`);
     if (u.kind === "aggregate" && (l.handles?.length ?? 0) > 1 && (l.records?.length ?? 0) > 1)
       gaps.push(`Aggregate "${u.title}" handles ${titles(l.handles)} and records ${titles(l.records)}; the storm doesn't say which command records which event.`);
     if (u.kind === "event" && !l.recordedBy) gaps.push(`Event "${u.title}" is not recorded by any aggregate.`);
@@ -7760,7 +7778,7 @@ function buildContract(board2) {
 var PLURAL = { command: "Commands", aggregate: "Aggregates", event: "Events", policy: "Policies", readmodel: "Read models" };
 var fieldList = (u) => u.fields.length ? u.fields.map((f) => `${f.name}: ${f.type}`).join(", ") : "\u2014";
 function unitLine(u) {
-  const extra = [u.actor && `actor ${u.actor}`, `fields ${fieldList(u)}`, u.hotspots.length && `hotspots: ${u.hotspots.join(" / ")}`].filter(Boolean);
+  const extra = [u.actor && `actor ${u.actor}`, u.invariants.length && `invariants: ${u.invariants.join(" / ")}`, `fields ${fieldList(u)}`, u.hotspots.length && `hotspots: ${u.hotspots.join(" / ")}`].filter(Boolean);
   return `${u.title} \u2014 \`${u.names.pascal}\` (id \`${u.id}\`; ${extra.join("; ")})`;
 }
 function renderExplain(c, issues2) {

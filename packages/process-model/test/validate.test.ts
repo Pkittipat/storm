@@ -22,6 +22,18 @@ describe('validate', () => {
     expect(validate(b)).toContainEqual(expect.objectContaining({ level: 'error', code: 'unknown-kind', path: 'blocks[2].kind' }))
   })
 
+  it('rejects an empty invariant and warns about invariants off an aggregate', () => {
+    const b = checkout()
+    b.blocks.find((x) => x.id === 'order')!.invariants.push(' ')
+    b.blocks.find((x) => x.id === 'place-order')!.invariants.push('The cart is not empty')
+    expect(validate(b)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ level: 'error', code: 'required', path: 'blocks[2].invariants[1]' }),
+        expect.objectContaining({ level: 'warning', code: 'invariant-kind', path: 'blocks[1].invariants' }),
+      ]),
+    )
+  })
+
   it('rejects connections to missing blocks, duplicates and self-links', () => {
     const b = checkout()
     b.connections.push({ from: 'order-placed', to: 'ghost' }, { from: 'cart', to: 'place-order' }, { from: 'order', to: 'order' })
@@ -38,7 +50,7 @@ describe('validate', () => {
 
   it('warns about unconnected blocks', () => {
     const b = checkout()
-    b.blocks.push({ id: 'lonely', kind: 'policy', title: 'Lonely', hotspots: [], fields: [] })
+    b.blocks.push({ id: 'lonely', kind: 'policy', title: 'Lonely', invariants: [], hotspots: [], fields: [] })
     expect(validate(b)).toEqual([expect.objectContaining({ level: 'warning', code: 'unconnected', path: 'blocks[8]' })])
   })
 

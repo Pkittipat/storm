@@ -19,7 +19,7 @@ export function toYaml(board: Board): string {
   return out.join('\n') + '\n'
 }
 
-/** A block without hotspots or fields fits on one line; otherwise it is written out key by key. */
+/** A block without invariants, hotspots or fields fits on one line; otherwise it is written out key by key. */
 function blockLines(block: Block, indent: string): string[] {
   const head: [string, string][] = [
     ['id', block.id],
@@ -27,9 +27,13 @@ function blockLines(block: Block, indent: string): string[] {
     ['title', block.title],
   ]
   if (block.actor) head.push(['actor', block.actor])
-  if (!block.hotspots.length && !block.fields.length) return [`${indent}- ${inline(head)}`]
+  if (!block.invariants.length && !block.hotspots.length && !block.fields.length) return [`${indent}- ${inline(head)}`]
 
   const out = head.map(([k, v], i) => `${indent}${i === 0 ? '- ' : '  '}${k}: ${scalar(v)}`)
+  if (block.invariants.length) {
+    out.push(`${indent}  invariants:`)
+    for (const r of block.invariants) out.push(`${indent}    - ${scalar(r)}`)
+  }
   if (block.hotspots.length) {
     out.push(`${indent}  hotspots:`)
     for (const h of block.hotspots) out.push(`${indent}    - ${scalar(h)}`)

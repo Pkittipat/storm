@@ -17,7 +17,7 @@ export const findBlock = (board: Board, id: string): Block | undefined => board.
 /** Appends a block. Its id is a slug of the title, unique in the process, and frozen from here on. */
 export function addBlock(board: Board, init: { kind: BlockKind; title: string }): { board: Board; blockId: string } {
   const blockId = newId(init.title, board.blocks.map((b) => b.id), init.kind)
-  return { board: { ...board, blocks: [...board.blocks, { id: blockId, kind: init.kind, title: init.title, hotspots: [], fields: [] }] }, blockId }
+  return { board: { ...board, blocks: [...board.blocks, { id: blockId, kind: init.kind, title: init.title, invariants: [], hotspots: [], fields: [] }] }, blockId }
 }
 
 export interface BlockPatch {
@@ -25,6 +25,7 @@ export interface BlockPatch {
   title?: string
   /** Empty or null clears it. */
   actor?: string | null
+  invariants?: string[]
   hotspots?: string[]
   fields?: Field[]
 }
